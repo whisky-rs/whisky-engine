@@ -5,28 +5,22 @@ use crate::{geometry::{Circle, Point}, InputMessage};
 use std::time::{Instant, Duration};
 
 #[derive(Clone, Copy)]
-pub enum Tool {
-    Crayon,
-    Rigid,
-    Hinge,
-    Eraser,
+pub enum Events {
+    Jump
 }
 
 pub struct GameStateProperties {
     pub mouse_position: [f32; 2],
-    pub line_points: Vec<[f32; 2]>,
-    pub static_circle: Circle,
-    pub is_beginning_draw: bool,
     pub is_mouse_clicked: bool,
     pub is_holding: bool,
     pub timer: Instant,
-    pub tool: Tool,
 }
 
-pub struct GameState(pub GameStateProperties,);
+
+pub struct GameState(pub GameStateProperties);
 
 impl GameState {
-    pub fn handle_mouse_input(&mut self, element_state: ElementState, button: MouseButton, input_physics_actions: &mut channel::Sender<InputMessage>) {
+/*     pub fn handle_mouse_input(&mut self, element_state: ElementState, button: MouseButton, input_physics_actions: &mut channel::Sender<InputMessage>) {
         if button == MouseButton::Left && element_state == ElementState::Pressed {
             let [x, y] = self.0.mouse_position;
             let mouse = Point(x as f64, -y as f64);
@@ -81,12 +75,13 @@ impl GameState {
             self.0.is_beginning_draw = true;
             self.0.is_holding = false;
         }
-    }
+    } */
 
     pub fn handle_mouse_moved(&mut self, position: PhysicalPosition<f64>, dimensions: PhysicalSize<u32>) {
          // have to normalize coordinates
          self.0.mouse_position = Self::normalize_mouse_position(dimensions, position);
-         if let Tool::Crayon = self.0.tool {
+
+         /* if let Tool::Crayon = self.0.tool {
              if self.0.timer.elapsed() <= Duration::from_millis(500) {
                  self.0.is_holding = false;
                  self.0.static_circle.radius = 0.;
@@ -104,37 +99,17 @@ impl GameState {
              if self.0.is_mouse_clicked {
                  self.0.line_points.push(self.0.mouse_position);
              }
-         }
+         } */
     }
 
     pub fn handle_keyboard_input(&mut self, input: KeyboardInput) {
-        self.0.tool = match input {
+        match input {
             KeyboardInput {
                 state: ElementState::Pressed,
                 virtual_keycode: Some(winit::event::VirtualKeyCode::A),
                 ..
-            } => Tool::Eraser,
-            KeyboardInput {
-                state: ElementState::Pressed,
-                virtual_keycode: Some(winit::event::VirtualKeyCode::D),
-                ..
-            } => Tool::Hinge,
-            KeyboardInput {
-                state: ElementState::Pressed,
-                virtual_keycode: Some(winit::event::VirtualKeyCode::S),
-                ..
-            } => Tool::Rigid,
-            KeyboardInput {
-                state: ElementState::Released,
-                virtual_keycode:
-                    Some(
-                        winit::event::VirtualKeyCode::A
-                        | winit::event::VirtualKeyCode::S
-                        | winit::event::VirtualKeyCode::D,
-                    ),
-                ..
-            } => Tool::Crayon,
-            _ => self.0.tool,
+            } => {},
+            _ => {}
         };
     }
 
