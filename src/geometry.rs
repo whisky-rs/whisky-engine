@@ -1,6 +1,6 @@
 use std::ops;
 
-use serde::Deserialize;
+use serde::{Serialize, Deserialize};
 
 pub const EPSILON: f64 = 1e-7;
 
@@ -9,7 +9,7 @@ pub const EPSILON: f64 = 1e-7;
 /// The types of receivers and parameters are mostly specified explicitly
 /// as either `Point` or the type alias `Vector`, to suggest the correct intepretation
 /// of these values within a given context
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
 pub struct Point(pub f64, pub f64);
 
 impl Point {
@@ -130,7 +130,7 @@ pub struct Polygon {
     pub centroid: Point,
 }
 
-#[derive(Clone, Copy, Deserialize)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub struct Circle {
     pub center: Point,
     pub radius: f64,
