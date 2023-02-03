@@ -1,5 +1,5 @@
 use crossbeam::channel::{self, TryRecvError};
-use game_logic::{GameState, GameStateProperties, Tool};
+use game_logic::{GameState, GameStateProperties, Tool, EditorState};
 use geometry::Point;
 use levels::{Level, LoadError, Entity};
 use std::{env, thread, time::{Duration, Instant}};
@@ -18,7 +18,8 @@ pub enum InputMessage {
     Hinge(Point),
     DrawPolygon(Vec<[f32; 2]>),
     DrawCircle(geometry::Circle),
-    CreateLevelShape([f32;2], [f32;2]),
+    CreateLevelShape([f32;2], [f32;2], EditorState),
+    RemoveLastShape,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -47,6 +48,10 @@ fn main() -> Result<(), ArgError> {
         is_beginning_draw: true,
         is_mouse_clicked: false,
         is_holding: false,
+        ed: EditorState {
+            is_deadly: false,
+            is_fragile: false,
+        },
         timer: Instant::now(),
         tool: Tool::Crayon,
     });
@@ -69,7 +74,7 @@ fn main() -> Result<(), ArgError> {
                     Ok(InputMessage::DrawCircle(geometry::Circle { center, radius })) => {
                         physics.add_circle(Circle::new(center, radius))
                     }
-                    Ok(InputMessage::CreateLevelShape(p1,p2)) => {
+                    Ok(InputMessage::CreateLevelShape(p1,p2,ed)) => {
                         level.polygons.push(Entity {
                             shape: vec!(
                                 Point(p1[0].into(), p1[1].into()),
@@ -78,8 +83,15 @@ fn main() -> Result<(), ArgError> {
                                 Point(p2[0].into(), p1[1].into())
                            ),
                            is_static: true,
-                           is_bindable: false
+                           is_bindable: false,
+                           is_deadly: ed.is_deadly,
+                           is_fragile: ed.is_fragile,
                         });
+                        level.save_to_file("edited.ron");
+                        break
+                    }
+                    Ok(InputMessage::RemoveLastShape) => {
+                        level.polygons.pop();
                         level.save_to_file("edited.ron");
                         break
                     }

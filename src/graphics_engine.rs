@@ -178,7 +178,7 @@ pub fn run(
             event: WindowEvent::KeyboardInput { input, .. },
             ..
         } => {
-            game_state.handle_keyboard_input(input);
+            game_state.handle_keyboard_input(input, &mut messages);
         }
         Event::WindowEvent {
             event: WindowEvent::Resized(_),
