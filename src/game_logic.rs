@@ -10,13 +10,14 @@ use crate::{
 };
 use std::time::{Duration, Instant};
 
+#[derive(Debug, Clone, Copy)]
+pub struct EditorState {
+    pub is_deadly: bool,
+    pub is_fragile: bool,
+}
+
 pub struct GameState {
     pub mouse_position: [f32; 2],
-    pub mpsaved: [f32; 2],
-    pub line_points: Vec<[f32; 2]>,
-    pub is_beginning_draw: bool,
-    pub is_mouse_clicked: bool,
-    pub is_holding: bool,
     pub timer: Instant,
     pub player: Circle,
     pub angle: f32,

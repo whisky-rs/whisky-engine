@@ -4,11 +4,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::geometry::{Circle, Point};
 
+fn initialize_false() -> bool {false}
+
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Entity<S> {
     pub shape: S,
     pub is_static: bool,
     pub is_bindable: bool,
+    #[serde(default = "initialize_false")]
+    pub is_deadly: bool,
+    #[serde(default = "initialize_false")]
+    pub is_fragile: bool,
 }
 
 /// Represents a single level
