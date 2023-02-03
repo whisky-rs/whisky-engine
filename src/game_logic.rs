@@ -14,6 +14,7 @@ pub enum Tool {
 
 pub struct GameStateProperties {
     pub mouse_position: [f32; 2],
+    pub mpsaved: [f32; 2],
     pub line_points: Vec<[f32; 2]>,
     pub static_circle: Circle,
     pub is_beginning_draw: bool,
@@ -80,6 +81,18 @@ impl GameState {
             self.0.is_mouse_clicked = false;
             self.0.is_beginning_draw = true;
             self.0.is_holding = false;
+        }
+        if button == MouseButton::Right && element_state == ElementState::Pressed {
+            self.0.mpsaved = self.0.mouse_position;
+            eprintln!("aa");
+        }
+        if button == MouseButton::Middle && element_state == ElementState::Pressed {
+            let [x1,y1] = self.0.mouse_position;
+            let [x2,y2] = self.0.mpsaved;
+            
+            input_physics_actions.send(InputMessage::CreateLevelShape([x1,-y1], [x2,-y2])).unwrap();
+            //println!("(shape: [({x1},{y1}),({x1},{y2}),({x2},{y2}),({x2},{y1})], is_bindable: false, is_static: true),\n");
+            //eprintln!("(shape: [({x1},{y1}),({x1},{y2}),({x2},{y2}),({x2},{y1})], is_bindable: false, is_static: true),\n");
         }
     }
 
