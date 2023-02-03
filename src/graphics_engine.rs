@@ -735,7 +735,7 @@ fn window_size_dependent_setup(
                     memory_allocator,
                     dimensions,
                     sample_count,
-                    Format::B8G8R8A8_UNORM,
+                    image.format(),
                 )
                 .unwrap(),
             )
