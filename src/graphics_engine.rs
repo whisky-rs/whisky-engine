@@ -192,15 +192,6 @@ pub fn run(
                 is_first_run = false;
             }
 
-            //draws static circle
-            if game_state.0.timer.elapsed() > Duration::from_millis(500)
-                && game_state.0.is_holding
-                && matches!(game_state.0.tool, Tool::Crayon)
-            {
-                game_state.0.static_circle.radius =
-                    (game_state.0.timer.elapsed().as_secs_f64() - 0.5) / 7.;
-            }
-
             // window section
             let window = surface.object().unwrap().downcast_ref::<Window>().unwrap();
             let dimensions = window.inner_size();
@@ -264,8 +255,6 @@ pub fn run(
                 Err(channel::TryRecvError::Disconnected) => *control_flow = ControlFlow::Exit,
                 _ => {}
             }
-
-
 
 
             let vertex_buffer_polygons =
