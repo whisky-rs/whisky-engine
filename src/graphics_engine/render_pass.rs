@@ -183,16 +183,6 @@ impl SimpleShapes {
             .bind_vertex_buffers(0, buffers.background.clone())
             .draw(buffers.background.len() as u32, 1, 0, 0)
             .unwrap()
-            .bind_pipeline_graphics(pipelines.texture_pipeline.clone())
-            .bind_descriptor_sets(
-                PipelineBindPoint::Graphics,
-                pipelines.texture_pipeline.layout().clone(),
-                0,
-                textures.flag.0.clone(),
-            )
-            .bind_vertex_buffers(0, buffers.flags.clone())
-            .draw(buffers.flags.len() as u32, 1, 0, 0)
-            .unwrap()
             .bind_pipeline_graphics(pipelines.polygon_pipeline.clone())
             .bind_vertex_buffers(0, buffers.polygons.clone())
             .draw(buffers.polygons.len() as u32, 1, 0, 0)
@@ -201,26 +191,8 @@ impl SimpleShapes {
             .bind_vertex_buffers(0, buffers.circles.clone())
             .draw(buffers.circles.len() as u32, 1, 0, 0)
             .unwrap()
-            .bind_pipeline_graphics(pipelines.texture_pipeline.clone())
-            .bind_descriptor_sets(
-                PipelineBindPoint::Graphics,
-                pipelines.texture_pipeline.layout().clone(),
-                0,
-                textures.draw_line.0.clone(),
-            )
-            .bind_vertex_buffers(0, buffers.line.clone())
-            .draw(buffers.line.len() as u32, 1, 0, 0)
-            .unwrap()
-            .bind_pipeline_graphics(pipelines.texture_array_pipeline.clone())
-            .bind_descriptor_sets(
-                PipelineBindPoint::Graphics,
-                pipelines.texture_array_pipeline.layout().clone(),
-                0,
-                textures.tool.0.clone(),
-            )
-            .bind_vertex_buffers(0, buffers.tool.clone())
-            .draw(buffers.tool.len() as u32, 1, 0, 0)
-            .unwrap()
+
+
             .end_render_pass()
             .unwrap();
     }
