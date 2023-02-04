@@ -372,6 +372,7 @@ fn format_data(
                                 -pol.shape.vertices[3].1 as f32,
                             ],
                             color: pol.color,
+                            tex_position: [0.0, 0.0],
                             ..Default::default()
                         },
                         Vertex {
@@ -381,6 +382,7 @@ fn format_data(
                                 -pol.shape.vertices[0].1 as f32,
                             ],
                             color: pol.color,
+                            tex_position: [0.0, 1.0],
                             ..Default::default()
                         },
                         Vertex {
@@ -390,6 +392,7 @@ fn format_data(
                                 -pol.shape.vertices[2].1 as f32,
                             ],
                             color: pol.color,
+                            tex_position: [1.0, 0.0],
                             ..Default::default()
                         },
                         Vertex {
@@ -399,6 +402,7 @@ fn format_data(
                                 -pol.shape.vertices[1].1 as f32,
                             ],
                             color: pol.color,
+                            tex_position: [0.0, 0.0],
                             ..Default::default()
                         },
                     ]
@@ -412,6 +416,7 @@ fn format_data(
                                 -pol.shape.vertices[2].1 as f32,
                             ],
                             color: pol.color,
+                            tex_position: [0.0, 0.0],
                             ..Default::default()
                         },
                         Vertex {
@@ -421,6 +426,7 @@ fn format_data(
                                 -pol.shape.vertices[0].1 as f32,
                             ],
                             color: pol.color,
+                            tex_position: [1.0, 0.0],
                             ..Default::default()
                         },
                         Vertex {
@@ -430,16 +436,12 @@ fn format_data(
                                 -pol.shape.vertices[1].1 as f32,
                             ],
                             color: pol.color,
+                            tex_position: [1.0, 0.0],
                             ..Default::default()
                         },
                     ]
                     .into_iter()
-                }, // pol.shape.vertices.iter().map(|vert| Vertex {
-                   //     texture_id: i as u32,
-                   //     position: [vert.0 as f32, -vert.1 as f32],
-                   //     color: pol.color,
-                   //     ..Default::default()
-                   // })
+                },
             )
             .chain(std::iter::once(Vertex {
                 texture_id: i as u32,
