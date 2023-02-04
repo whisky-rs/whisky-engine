@@ -19,6 +19,7 @@ pub enum InputMessage {
     DrawPolygon(Vec<[f32; 2]>),
     DrawCircle(geometry::Circle),
     CreateLevelShape([f32;2], [f32;2], EditorState),
+    CreateLevelShapeFreeQuad(EditorState),
     RemoveLastShape,
 }
 
@@ -51,6 +52,7 @@ fn main() -> Result<(), ArgError> {
         ed: EditorState {
             is_deadly: false,
             is_fragile: false,
+            free_quad: vec!(),
         },
         timer: Instant::now(),
         tool: Tool::Crayon,
@@ -82,6 +84,17 @@ fn main() -> Result<(), ArgError> {
                                 Point(p2[0].into(), p2[1].into()),
                                 Point(p2[0].into(), p1[1].into())
                            ),
+                           is_static: true,
+                           is_bindable: false,
+                           is_deadly: ed.is_deadly,
+                           is_fragile: ed.is_fragile,
+                        });
+                        level.save_to_file("edited.ron");
+                        break
+                    }
+                    Ok(InputMessage::CreateLevelShapeFreeQuad(ed)) => {
+                        level.polygons.push(Entity {
+                           shape: ed.free_quad.iter().map(|x| Point(x[0].into(), (-x[1]).into())).collect(),
                            is_static: true,
                            is_bindable: false,
                            is_deadly: ed.is_deadly,

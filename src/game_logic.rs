@@ -12,10 +12,11 @@ pub enum Tool {
     Eraser,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct EditorState {
     pub is_deadly: bool,
     pub is_fragile: bool,
+    pub free_quad: Vec<[f32; 2]>
 }
 
 pub struct GameStateProperties {
@@ -110,7 +111,7 @@ impl GameState {
                 y2 *= 1.5
             }
             
-            input_physics_actions.send(InputMessage::CreateLevelShape([x1,-y1], [x2,-y2], self.0.ed)).unwrap();
+            input_physics_actions.send(InputMessage::CreateLevelShape([x1,-y1], [x2,-y2], self.0.ed.clone())).unwrap();
         }
     }
 
@@ -189,6 +190,21 @@ impl GameState {
                     ),
                 ..
             } => {self.0.ed.is_fragile = !self.0.ed.is_fragile; self.print_editor_state(); self.0.tool}
+            KeyboardInput {
+                state: ElementState::Released,
+                virtual_keycode:
+                    Some(
+                        winit::event::VirtualKeyCode::N
+                    ),
+                ..
+            } => {
+                self.0.ed.free_quad.push(self.0.mouse_position);
+                if self.0.ed.free_quad.len() == 4 {
+                    input_physics_actions.send(InputMessage::CreateLevelShapeFreeQuad(self.0.ed.clone())).unwrap();
+                    self.0.ed.free_quad.clear();
+                }
+                self.0.tool
+            }
             _ => self.0.tool,
         };
     }
