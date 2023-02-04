@@ -129,7 +129,7 @@ impl SimpleShapes {
         let texture_array_subpass = Subpass::from(render_pass.clone(), 0).unwrap();
 
         //creation of graphics pipelines
-        let pipeline = SimpleShapes::create_pipeline(device, subpass, vs, fs);
+        let pipeline = SimpleShapes::create_pipeline_trg_strip(device, subpass, vs, fs);
 
         let circle_pipeline =
             SimpleShapes::create_pipeline(device, circle_subpass, circle_vs, circle_fs);
@@ -183,7 +183,13 @@ impl SimpleShapes {
             .bind_vertex_buffers(0, buffers.background.clone())
             .draw(buffers.background.len() as u32, 1, 0, 0)
             .unwrap()
-            .bind_pipeline_graphics(pipelines.polygon_pipeline.clone())
+            .bind_pipeline_graphics(pipelines.texture_pipeline.clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Graphics,
+                pipelines.texture_pipeline.layout().clone(),
+                0,
+                textures.test_set.0.clone(),
+            )
             .bind_vertex_buffers(0, buffers.polygons.clone())
             .draw(buffers.polygons.len() as u32, 1, 0, 0)
             .unwrap()
