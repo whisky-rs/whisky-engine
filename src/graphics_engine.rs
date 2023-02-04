@@ -1,4 +1,5 @@
 use crossbeam::channel;
+use winit::dpi::LogicalPosition;
 use std::sync::Arc;
 use std::time::Duration;
 use std::vec;
@@ -27,7 +28,7 @@ use winit::{
 
 use vertex::Vertex;
 
-use crate::game_logic::{GameState, Tool};
+use crate::game_logic::{GameState};
 use crate::geometry::{windows, Circle, Point};
 use crate::graphics_engine::render_pass::SimpleShapes;
 use crate::physics::{DisplayMessage, WithColor};
@@ -161,24 +162,17 @@ pub fn run(
         } => {
             *control_flow = ControlFlow::Exit;
         }
-
-        Event::WindowEvent {
-            event: WindowEvent::MouseInput { state, button, .. },
-            ..
-        } => {
-            game_state.handle_mouse_input(state, button, &mut messages);
-        }
         Event::WindowEvent {
             event: WindowEvent::CursorMoved { position, .. },
             ..
         } => {
-            game_state.handle_mouse_moved(position, dimensions);
+            game_state.handle_mouse_moved(position, dimensions, &mut messages);
         }
         Event::WindowEvent {
             event: WindowEvent::KeyboardInput { input, .. },
             ..
         } => {
-            game_state.handle_keyboard_input(input);
+            game_state.handle_keyboard_input(input, &mut messages);
         }
         Event::WindowEvent {
             event: WindowEvent::Resized(_),
@@ -195,6 +189,10 @@ pub fn run(
             // window section
             let window = surface.object().unwrap().downcast_ref::<Window>().unwrap();
             let dimensions = window.inner_size();
+            if game_state.reset_position {
+                window.set_cursor_position(LogicalPosition::new(dimensions.width / 2, dimensions.height / 2)).unwrap();
+                game_state.reset_position = false;
+            }
             if dimensions.width == 0 || dimensions.height == 0 {
                 return;
             }
