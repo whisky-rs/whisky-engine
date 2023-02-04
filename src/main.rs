@@ -13,6 +13,7 @@ pub mod game_logic;
 pub mod geometry;
 pub mod graphics_engine;
 pub mod levels;
+pub mod phone_connector;
 pub mod physics;
 
 pub enum InputMessage {
@@ -38,7 +39,7 @@ fn main() -> Result<(), ArgError> {
     let (shapes_tx, shapes_rx) = channel::bounded(1);
     let (messages_tx, messages_rx) = channel::unbounded();
 
-    let mut level = Level::load_from_file(&env::args().nth(1).ok_or(ArgError::MissingFileName)?)?;
+    let level = Level::load_from_file(&env::args().nth(1).ok_or(ArgError::MissingFileName)?)?;
 
     let game_state = GameState {
         mouse_position: [1.5, 1.5],
@@ -52,38 +53,33 @@ fn main() -> Result<(), ArgError> {
     };
 
     let physics = thread::spawn(move || {
+        let mut physics = physics::Engine::new(shapes_tx.clone(), level.clone());
         loop {
-            let mut physics = physics::Engine::new(shapes_tx.clone(), level.clone());
-            loop {
-                match messages_rx.try_recv() {
-                    Ok(InputMessage::Rigid(point)) => physics.add_rigid(point),
-                    Ok(InputMessage::Erase(point)) => physics.erase_at(point),
-                    Ok(InputMessage::Hinge(point)) => physics.add_hinge(point),
-                    Ok(InputMessage::DrawPolygon(vertices)) => {
-                        physics.add_polygon(compute::hull::<24>(
-                            vertices
-                                .into_iter()
-                                .map(|[x, y]| Point(x as f64, -y as f64)),
-                        ))
-                    }
-                    Ok(InputMessage::DrawCircle(geometry::Circle { center, radius })) => {
-                        physics.add_circle(Circle::new(center, radius))
-                    }
-                    Ok(InputMessage::DrawCircle(geometry::Circle { center, radius })) => {
-                        physics.add_circle(Circle::new(center, radius))
-                    }
-                    Ok(InputMessage::Angle(angle)) => { /* TODO JEREMI */ }
-                    Ok(InputMessage::Jump) => { /* TODO JEREMI */ }
-                    Err(TryRecvError::Disconnected) => return,
-                    Err(TryRecvError::Empty) => {}
+            match messages_rx.try_recv() {
+                Ok(InputMessage::Rigid(point)) => physics.add_rigid(point),
+                Ok(InputMessage::Erase(point)) => physics.erase_at(point),
+                Ok(InputMessage::Hinge(point)) => physics.add_hinge(point),
+                Ok(InputMessage::DrawPolygon(vertices)) => {
+                    physics.add_polygon(compute::hull::<24>(
+                        vertices
+                            .into_iter()
+                            .map(|[x, y]| Point(x as f64, -y as f64)),
+                    ))
                 }
+                Ok(InputMessage::DrawCircle(geometry::Circle { center, radius })) => {
+                    physics.add_circle(Circle::new(center, radius))
+                }
+                Ok(InputMessage::Angle(angle)) => {
+                    physics.angle = angle;
+                }
+                Ok(InputMessage::Jump) => physics.jump(),
+                Err(TryRecvError::Disconnected) => return,
+                Err(TryRecvError::Empty) => {}
             }
 
             physics.run_iteration();
         }
     });
-
-    let lvledit = thread::spawn(move || {});
 
     thread::sleep(Duration::from_millis(100));
     graphics_engine::run(shapes_rx, messages_tx, game_state);

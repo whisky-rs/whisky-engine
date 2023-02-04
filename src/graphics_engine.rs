@@ -1,7 +1,5 @@
 use crossbeam::channel;
-use winit::dpi::LogicalPosition;
 use std::sync::Arc;
-use std::time::Duration;
 use std::vec;
 use vulkano::image::{AttachmentImage, ImageUsage, SampleCount};
 use vulkano::memory::allocator::MemoryAllocator;
@@ -20,6 +18,7 @@ use vulkano::{
     },
     sync::{self, FlushError, GpuFuture},
 };
+use winit::dpi::LogicalPosition;
 use winit::{
     event::{Event, WindowEvent},
     event_loop::ControlFlow,
@@ -28,8 +27,8 @@ use winit::{
 
 use vertex::Vertex;
 
-use crate::game_logic::{GameState};
-use crate::geometry::{windows, Circle, Point};
+use crate::game_logic::GameState;
+use crate::geometry::{windows, Circle};
 use crate::graphics_engine::render_pass::SimpleShapes;
 use crate::physics::{DisplayMessage, WithColor};
 use crate::InputMessage;
@@ -119,7 +118,6 @@ pub fn run(
         &descriptor_set_allocator,
     );
 
-
     let game_textures = Textures {
         background: background_set,
     };
@@ -190,7 +188,12 @@ pub fn run(
             let window = surface.object().unwrap().downcast_ref::<Window>().unwrap();
             let dimensions = window.inner_size();
             if game_state.reset_position {
-                window.set_cursor_position(LogicalPosition::new(dimensions.width / 2, dimensions.height / 2)).unwrap();
+                window
+                    .set_cursor_position(LogicalPosition::new(
+                        dimensions.width / 2,
+                        dimensions.height / 2,
+                    ))
+                    .unwrap();
                 game_state.reset_position = false;
             }
             if dimensions.width == 0 || dimensions.height == 0 {
@@ -254,10 +257,8 @@ pub fn run(
                 _ => {}
             }
 
-
             let vertex_buffer_polygons =
                 create_vertex_buffer(&memory_allocator, polygons_vertices.clone());
-
 
             let vertex_buffer_circles = if !circles_vertices.is_empty() {
                 create_vertex_buffer(&memory_allocator, circles_vertices.clone())
