@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::geometry::{Circle, Point};
 
-fn initialize_false() -> bool {false}
+fn initialize_false() -> bool {
+    false
+}
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Entity<S> {
@@ -41,7 +43,7 @@ impl Level {
     pub fn load_from_file(path: impl AsRef<Path>) -> Result<Level, LoadError> {
         Ok(ron::from_str(&fs::read_to_string(path)?)?)
     }
-    pub fn save_to_file(&self,path: impl AsRef<Path>) {
+    pub fn save_to_file(&self, path: impl AsRef<Path>) {
         fs::write(path, ron::to_string(self).unwrap()).unwrap();
     }
 }

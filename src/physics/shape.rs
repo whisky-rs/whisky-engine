@@ -130,13 +130,14 @@ pub trait Collidable: Bounded + RefUnwindSafe {
     fn resolve_point_reference(&self, point_ref: PointOnShape) -> Point;
     fn create_point_reference(&self, point: Point) -> PointOnShape;
 
-    fn update_position(&mut self, time_step: Duration) {
+    fn update_position(&mut self, time_step: Duration, angle: f64) {
         let time_step = time_step.as_micros() as f64;
 
         let velocity = self.collision_data_mut().velocity;
         let angular_velocity = self.collision_data_mut().angular_velocity;
 
-        self.collision_data_mut().velocity += Point(0.0, GRAVITY_COEFFICIENT * time_step);
+        self.collision_data_mut().velocity +=
+            Point(0.0, GRAVITY_COEFFICIENT * time_step).rotate(angle);
         self.rotate(angular_velocity * MOVEMENT_COEFFICIENT * time_step);
         self.translate(velocity * MOVEMENT_COEFFICIENT * time_step);
     }

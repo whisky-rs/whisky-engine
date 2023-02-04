@@ -1,6 +1,6 @@
 use std::ops;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 pub const EPSILON: f64 = 1e-7;
 
@@ -130,10 +130,24 @@ pub struct Polygon {
     pub centroid: Point,
 }
 
+impl Polygon {
+    pub fn rotate(&mut self, angle: f32) {
+        for vertex in &mut self.vertices {
+            *vertex = vertex.rotate(angle as f64);
+        }
+    }
+}
+
 #[derive(Clone, Copy, Deserialize, Serialize)]
 pub struct Circle {
     pub center: Point,
     pub radius: f64,
+}
+
+impl Circle {
+    pub fn rotate(&mut self, angle: f32) {
+        self.center = self.center.rotate(angle as f64);
+    }
 }
 
 #[cfg(test)]

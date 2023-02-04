@@ -1,7 +1,6 @@
 use crossbeam::channel;
 use ron::de;
 use std::sync::Arc;
-use std::time::Duration;
 use std::vec;
 use vulkano::image::{AttachmentImage, ImageUsage, SampleCount};
 use vulkano::memory::allocator::MemoryAllocator;

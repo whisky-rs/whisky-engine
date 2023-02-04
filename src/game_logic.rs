@@ -1,13 +1,10 @@
-use crossbeam::channel::{self, Sender};
+use crossbeam::channel;
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize},
-    event::{ElementState, KeyboardInput, MouseButton},
+    event::{ElementState, KeyboardInput},
 };
 
-use crate::{
-    geometry::{Circle, Point},
-    InputMessage,
-};
+use crate::{geometry::Circle, InputMessage};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
@@ -32,14 +29,14 @@ impl GameState {
         dimensions: PhysicalSize<u32>,
         input_physics_actions: &mut channel::Sender<InputMessage>,
     ) {
-        if self.timer.elapsed() <= Duration::from_millis(100) {
-            // have to normalize coordinates
-            self.mouse_position = Self::normalize_mouse_position(dimensions, position);
+        self.mouse_position = Self::normalize_mouse_position(dimensions, position);
 
-            self.calculate_new_angle();
-            input_physics_actions
-                .send(InputMessage::Angle(self.angle))
-                .unwrap();
+        self.calculate_new_angle();
+        input_physics_actions
+            .send(InputMessage::Angle(self.angle))
+            .unwrap();
+        if self.timer.elapsed() >= Duration::from_millis(100) {
+            // have to normalize coordinates
 
             self.reset_position = true;
             self.timer = Instant::now();
@@ -79,7 +76,7 @@ impl GameState {
 
     fn calculate_new_angle(&mut self) {
         let two_pi = 2. * std::f32::consts::PI;
-        self.angle = (self.angle + self.mouse_position[0] * std::f32::consts::PI) % two_pi;
+        self.angle = (self.angle + self.mouse_position[0] * std::f32::consts::PI / 6.0) % two_pi;
     }
 
     fn normalize_mouse_position(
