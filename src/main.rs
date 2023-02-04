@@ -1,5 +1,5 @@
 use crossbeam::channel::{self, TryRecvError};
-use game_logic::{GameState, GameStateProperties, Tool};
+use game_logic::{GameState};
 use geometry::Point;
 use levels::{Level, LoadError};
 use std::{env, thread, time::{Duration, Instant}};
@@ -18,6 +18,8 @@ pub enum InputMessage {
     Hinge(Point),
     DrawPolygon(Vec<[f32; 2]>),
     DrawCircle(geometry::Circle),
+    Angle(f32),
+    Jump
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -35,19 +37,16 @@ fn main() -> Result<(), ArgError> {
 
     let level = Level::load_from_file(&env::args().nth(1).ok_or(ArgError::MissingFileName)?)?;
 
-    let game_state = GameState(GameStateProperties {
+    let game_state = GameState {
         mouse_position: [1.5, 1.5],
-        line_points: vec![[0.0, 0.0], [0.0, 0.0]],
-        static_circle: geometry::Circle  {
+        player: geometry::Circle  {
             center: Point(1.5, 1.5),
             radius: 0.,
         },
-        is_beginning_draw: true,
-        is_mouse_clicked: false,
-        is_holding: false,
         timer: Instant::now(),
-        tool: Tool::Crayon,
-    });
+        reset_position: false,
+        angle: 0.,
+    };
 
     let physics = thread::spawn(move || {
         let mut physics = physics::Engine::new(shapes_tx, level);
@@ -66,6 +65,8 @@ fn main() -> Result<(), ArgError> {
                 Ok(InputMessage::DrawCircle(geometry::Circle { center, radius })) => {
                     physics.add_circle(Circle::new(center, radius))
                 }
+                Ok(InputMessage::Angle(angle)) => {/* TODO JEREMI */},
+                Ok(InputMessage::Jump) => {/* TODO JEREMI */},
                 Err(TryRecvError::Disconnected) => return,
                 Err(TryRecvError::Empty) => {}
             }

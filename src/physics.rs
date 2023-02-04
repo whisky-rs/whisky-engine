@@ -3,7 +3,7 @@ use std::{
     os::raw::c_void,
     process,
     rc::{Rc, Weak},
-    time::Instant,
+    time::Instant, borrow::BorrowMut,
 };
 
 use crossbeam::channel::{self, TrySendError};
@@ -169,6 +169,7 @@ pub struct Engine {
     main_ball_starting_position: Point,
     flags: Vec<Polygon>,
     last_iteration: Instant,
+    main_ball: Weak<RefCell<Circle>>,
 }
 
 impl Engine {
@@ -202,16 +203,21 @@ impl Engine {
                 })
                 .collect(),
             last_iteration: Instant::now(),
+            main_ball: Weak::new()
         };
 
         let main_ball_weak = engine.add_entity(
             Circle::new(initial_ball_position, 0.1),
             EntityCfg {
-                is_bindable: true,
+                is_bindable: false,
                 is_erasable: false,
                 is_static: false,
             },
         );
+
+        engine.main_ball = main_ball_weak.clone();
+
+
         engine.circles.push(main_ball_weak.into());
 
         for entity in polygons {
@@ -439,6 +445,12 @@ impl Engine {
             self.entities[i].add_rigid(point);
         }
     }
+
+    pub fn jump(&mut self) {
+        let mut main_ball_mut = self.main_ball.upgrade().unwrap();
+        main_ball_mut.get_mut().collision_data_mut().velocity.0 = 0.1;
+    }
+
 }
 
 #[cfg(test)]

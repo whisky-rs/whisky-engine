@@ -1,116 +1,48 @@
-use crossbeam::channel;
+use crossbeam::channel::{self, Sender};
 use winit::{event::{ElementState, MouseButton, KeyboardInput}, dpi::{PhysicalPosition, PhysicalSize}};
 
 use crate::{geometry::{Circle, Point}, InputMessage};
 use std::time::{Instant, Duration};
 
-#[derive(Clone, Copy)]
-pub enum Events {
-    Jump
-}
-
-pub struct GameStateProperties {
+pub struct GameState {
     pub mouse_position: [f32; 2],
-    pub is_mouse_clicked: bool,
-    pub is_holding: bool,
     pub timer: Instant,
+    pub player: Circle,
+    pub angle: f32,
+    pub reset_position: bool,
 }
-
-
-pub struct GameState(pub GameStateProperties);
 
 impl GameState {
-/*     pub fn handle_mouse_input(&mut self, element_state: ElementState, button: MouseButton, input_physics_actions: &mut channel::Sender<InputMessage>) {
-        if button == MouseButton::Left && element_state == ElementState::Pressed {
-            let [x, y] = self.0.mouse_position;
-            let mouse = Point(x as f64, -y as f64);
-            match self.0.tool {
-                Tool::Eraser => {
-                    input_physics_actions.send(InputMessage::Erase(mouse)).unwrap();
-                }
-                Tool::Hinge => {
-                    input_physics_actions.send(InputMessage::Hinge(mouse)).unwrap();
-                }
-                Tool::Rigid => {
-                    input_physics_actions.send(InputMessage::Rigid(mouse)).unwrap();
-                }
-                _ => {}
-            };
+    pub fn handle_mouse_moved(&mut self, position: PhysicalPosition<f64>, dimensions: PhysicalSize<u32>, input_physics_actions: &mut channel::Sender<InputMessage>) {
+        if self.timer.elapsed() <= Duration::from_millis(100) {
+            // have to normalize coordinates
+            self.mouse_position = Self::normalize_mouse_position(dimensions, position);
 
-            self.0.is_mouse_clicked = true;
-            if !self.0.is_holding {
-                self.0.static_circle.center = Point(
-                    self.0.mouse_position[0] as f64,
-                    -self.0.mouse_position[1] as f64,
-                );
-            };
-            self.0.is_holding = true;
+            self.calculate_new_angle();
+            input_physics_actions.send(InputMessage::Angle(self.angle)).unwrap();
 
-            self.0.timer = Instant::now();
+            self.reset_position = true;
+            self.timer = Instant::now();
         }
-        if button == MouseButton::Left && element_state == ElementState::Released {
-            if let Tool::Crayon = self.0.tool {
-                if self.0.is_holding {
-                    input_physics_actions
-                        .send(InputMessage::DrawCircle(self.0.static_circle))
-                        .unwrap();
-                    self.0.static_circle.radius = 0.;
-                } else {
-                    if self.0.line_points.len() > 20 {
-                        input_physics_actions
-                            .send(InputMessage::DrawPolygon(std::mem::take(
-                                &mut self.0.line_points,
-                            )))
-                            .unwrap();
-                    } else {
-                        self.0.line_points.clear();
-                    }
-
-                    self.0.line_points.push([0.0, 0.0]);
-                    self.0.line_points.push([0.0, 0.0]);
-                }
-            }
-
-            self.0.is_mouse_clicked = false;
-            self.0.is_beginning_draw = true;
-            self.0.is_holding = false;
-        }
-    } */
-
-    pub fn handle_mouse_moved(&mut self, position: PhysicalPosition<f64>, dimensions: PhysicalSize<u32>) {
-         // have to normalize coordinates
-         self.0.mouse_position = Self::normalize_mouse_position(dimensions, position);
-
-         /* if let Tool::Crayon = self.0.tool {
-             if self.0.timer.elapsed() <= Duration::from_millis(500) {
-                 self.0.is_holding = false;
-                 self.0.static_circle.radius = 0.;
-             }
-
-             if self.0.is_holding {
-                 return;
-             }
-             if self.0.is_beginning_draw && self.0.is_mouse_clicked {
-                 self.0.line_points.clear();
-                 self.0.line_points.push(self.0.mouse_position);
-                 self.0.is_beginning_draw = false;
-             }
-
-             if self.0.is_mouse_clicked {
-                 self.0.line_points.push(self.0.mouse_position);
-             }
-         } */
     }
 
-    pub fn handle_keyboard_input(&mut self, input: KeyboardInput) {
+    pub fn handle_keyboard_input(&mut self, input: KeyboardInput, input_physics_actions: &mut channel::Sender<InputMessage>) {
         match input {
             KeyboardInput {
                 state: ElementState::Pressed,
-                virtual_keycode: Some(winit::event::VirtualKeyCode::A),
+                virtual_keycode: Some(winit::event::VirtualKeyCode::Space),
                 ..
-            } => {},
+            } => {
+                input_physics_actions.send(InputMessage::Jump).unwrap();
+            },
             _ => {}
         };
+    }
+
+    fn calculate_new_angle(&mut self) {
+        let two_pi = 2. * std::f32::consts::PI;
+        self.angle = (self.angle + self.mouse_position[0] * std::f32::consts::PI) % two_pi;
+
     }
 
     fn normalize_mouse_position(
