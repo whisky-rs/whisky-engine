@@ -5,6 +5,17 @@ use serde::{Deserialize, Serialize};
 use crate::geometry::{Circle, Point};
 
 fn initialize_false() -> bool {false}
+fn initialize_empty() -> Vec<Laser> {vec!()}
+
+pub type Vector = Point;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Laser {
+    pub point: Point,
+    pub direction: Vector,
+    pub range: (Vector, Vector),
+    pub change: f64,
+}
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Entity<S> {
@@ -26,6 +37,8 @@ pub struct Level {
     pub initial_ball_position: Point,
     pub circles: Vec<Entity<Circle>>,
     pub polygons: Vec<Entity<Vec<Point>>>,
+    #[serde(default = "initialize_empty")]
+    pub lasers: Vec<Laser>,
     pub flags_positions: Vec<Point>,
 }
 

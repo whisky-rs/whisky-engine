@@ -16,7 +16,8 @@ pub enum Tool {
 pub struct EditorState {
     pub is_deadly: bool,
     pub is_fragile: bool,
-    pub free_quad: Vec<[f32; 2]>
+    pub free_quad: Vec<[f32; 2]>,
+    pub is_static: bool
 }
 
 pub struct GameStateProperties {
@@ -202,9 +203,17 @@ impl GameState {
                 if self.0.ed.free_quad.len() == 4 {
                     input_physics_actions.send(InputMessage::CreateLevelShapeFreeQuad(self.0.ed.clone())).unwrap();
                     self.0.ed.free_quad.clear();
-                }
+                };
                 self.0.tool
             }
+            KeyboardInput {
+                state: ElementState::Released,
+                virtual_keycode:
+                    Some(
+                        winit::event::VirtualKeyCode::K
+                    ),
+                ..
+            } => {self.0.ed.is_static = !self.0.ed.is_static; self.print_editor_state(); self.0.tool}
             _ => self.0.tool,
         };
     }

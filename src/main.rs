@@ -50,6 +50,7 @@ fn main() -> Result<(), ArgError> {
         is_mouse_clicked: false,
         is_holding: false,
         ed: EditorState {
+            is_static: true,
             is_deadly: false,
             is_fragile: false,
             free_quad: vec!(),
@@ -84,7 +85,7 @@ fn main() -> Result<(), ArgError> {
                                 Point(p2[0].into(), p2[1].into()),
                                 Point(p2[0].into(), p1[1].into())
                            ),
-                           is_static: true,
+                           is_static: ed.is_static,
                            is_bindable: false,
                            is_deadly: ed.is_deadly,
                            is_fragile: ed.is_fragile,
