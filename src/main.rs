@@ -38,6 +38,7 @@ pub enum ArgError {
 fn main() -> Result<(), ArgError> {
     let (shapes_tx, shapes_rx) = channel::bounded(1);
     let (messages_tx, messages_rx) = channel::unbounded();
+    let (phone_tx, phone_rx) = channel::unbounded();
 
     let mut level = Level::load_from_file(&env::args().nth(1).ok_or(ArgError::MissingFileName)?)?;
     level.lasers.push(Laser {
@@ -46,6 +47,7 @@ fn main() -> Result<(), ArgError> {
         direction: Point(0.1, 0.1),
         point: Point::ZERO,
     });
+    phone_connector::listen_for_phone(phone_tx);
 
     let game_state = GameState {
         mouse_position: [1.5, 1.5],
@@ -60,7 +62,15 @@ fn main() -> Result<(), ArgError> {
 
     let physics = thread::spawn(move || {
         let mut physics = physics::Engine::new(shapes_tx.clone(), level.clone());
+        let mut connected = false;
         loop {
+            match phone_rx.try_recv() {
+                Ok(phone_connector::Message::Connected) => connected = true,
+                Ok(phone_connector::Message::Disconnected) => connected = false,
+                Ok(phone_connector::Message::AngleDiff(angle)) => physics.angle += angle,
+                Err(TryRecvError::Disconnected) => return,
+                Err(TryRecvError::Empty) => {}
+            }
             match messages_rx.try_recv() {
                 Ok(InputMessage::Rigid(point)) => physics.add_rigid(point),
                 Ok(InputMessage::Erase(point)) => physics.erase_at(point),
@@ -76,7 +86,9 @@ fn main() -> Result<(), ArgError> {
                     physics.add_circle(Circle::new(center, radius))
                 }
                 Ok(InputMessage::Angle(angle)) => {
-                    physics.angle = angle;
+                    if !connected {
+                        physics.angle = angle;
+                    }
                 }
                 Ok(InputMessage::Jump) => physics.jump(),
                 Err(TryRecvError::Disconnected) => return,

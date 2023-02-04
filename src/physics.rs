@@ -5,6 +5,7 @@ use std::{
     process,
     rc::{Rc, Weak},
     time::Instant,
+    vec,
 };
 
 use crossbeam::channel::{self, TrySendError};
@@ -12,7 +13,7 @@ use rand::Rng;
 
 use self::{
     binding::{Binding, Unbound},
-    shape::{Circle, Collidable, Polygon},
+    shape::{Circle, Collidable, CollisionType, Polygon},
 };
 use crate::{
     geometry::{self, Laser, Point, Vector},
@@ -106,6 +107,8 @@ struct EntityCfg {
     is_erasable: bool,
     is_bindable: bool,
     is_static: bool,
+    is_deadly: bool,
+    is_fragile: bool,
 }
 
 impl Default for EntityCfg {
@@ -114,6 +117,8 @@ impl Default for EntityCfg {
             is_erasable: true,
             is_bindable: true,
             is_static: false,
+            is_deadly: false,
+            is_fragile: false,
         }
     }
 }
@@ -124,6 +129,8 @@ struct Entity {
     is_erasable: bool,
     is_bindable: bool,
     is_static: bool,
+    is_deadly: bool,
+    is_fragile: bool,
     shape: Rc<RefCell<dyn Collidable>>,
 }
 
@@ -133,6 +140,8 @@ impl Entity {
             is_erasable,
             is_bindable,
             is_static,
+            is_deadly,
+            is_fragile,
         } = entity_type;
 
         Self {
@@ -142,6 +151,8 @@ impl Entity {
             is_static,
             is_erasable,
             is_bindable,
+            is_deadly,
+            is_fragile,
         }
     }
 
@@ -228,11 +239,13 @@ impl Engine {
         };
 
         let main_ball_weak = engine.add_entity(
-            Circle::new(initial_ball_position, 0.1),
+            Circle::new(initial_ball_position, 0.07),
             EntityCfg {
                 is_bindable: false,
                 is_erasable: false,
                 is_static: false,
+                is_deadly: false,
+                is_fragile: false,
             },
         );
 
@@ -247,9 +260,20 @@ impl Engine {
                     is_bindable: entity.is_bindable,
                     is_static: entity.is_static,
                     is_erasable: false,
+                    is_deadly: entity.is_deadly,
+                    is_fragile: entity.is_fragile,
                 },
             );
-            engine.polygons.push(weak.into())
+            engine.polygons.push(WithColor {
+                color: if entity.is_deadly {
+                    [1.0, 0.0, 0.0]
+                } else if entity.is_fragile {
+                    [0.7, 0.7, 0.7]
+                } else {
+                    [0.3, 0.2, 0.2]
+                },
+                shape: weak,
+            })
         }
 
         for entity in circles {
@@ -260,9 +284,20 @@ impl Engine {
                     is_bindable: entity.is_bindable,
                     is_static: entity.is_static,
                     is_erasable: false,
+                    is_deadly: entity.is_deadly,
+                    is_fragile: entity.is_fragile,
                 },
             );
-            engine.circles.push(weak.into())
+            engine.circles.push(WithColor {
+                color: if entity.is_deadly {
+                    [1.0, 0.0, 0.0]
+                } else if entity.is_fragile {
+                    [0.7, 0.7, 0.7]
+                } else {
+                    [0.3, 0.2, 0.2]
+                },
+                shape: weak,
+            });
         }
 
         //  generate laser polygons
@@ -357,36 +392,55 @@ impl Engine {
             self.flags
                 .retain(|flag| compute::collision(&*ball, flag).is_none());
 
-            if self.flags.is_empty() {
-                println!("=========== YOU WIN! ==========");
-                process::exit(0);
-            }
+            // if self.flags.is_empty() {
+            //     println!("=========== YOU WIN! ==========");
+            //     process::exit(0);
+            // }
         }
 
         // iterate over all pairs of shapes
         {
             let mut i = 0;
+            let mut to_remove = vec![];
             while let [this, rest @ ..] = &mut self.entities[i..] {
                 let mut shape = this.shape.borrow_mut();
 
                 // collide them if they are not bound
-                rest.iter_mut().for_each(|other| {
-                    let mut is_boud_to_other = false;
-                    this.bindings.retain(|(_, target)| {
-                        let valid = target.strong_count() > 0;
-                        if valid {
-                            is_boud_to_other = is_boud_to_other
-                                || std::ptr::eq(
-                                    target.as_ptr() as *const c_void,
-                                    (&*other.shape) as *const _ as *const c_void,
-                                )
-                        }
-                        valid
-                    });
-
-                    if !is_boud_to_other {
-                        shape.collide(&mut *other.shape.borrow_mut(), time_step)
+                rest.iter_mut().enumerate().for_each(|(j, other)| {
+                    if this.is_static && other.is_static {
+                        return;
                     }
+                    // let mut is_boud_to_other = false;
+                    // this.bindings.retain(|(_, target)| {
+                    //     let valid = target.strong_count() > 0;
+                    //     if valid {
+                    //         is_boud_to_other = is_boud_to_other
+                    //             || std::ptr::eq(
+                    //                 target.as_ptr() as *const c_void,
+                    //                 (&*other.shape) as *const _ as *const c_void,
+                    //             )
+                    //     }
+                    //     valid
+                    // });
+
+                    // if !is_boud_to_other {
+                    let collision = shape.collide(&mut *other.shape.borrow_mut(), time_step);
+                    if let CollisionType::Strong = collision {
+                        if this.is_fragile {
+                            to_remove.push(i);
+                        }
+                        if other.is_fragile {
+                            to_remove.push(i + j + 1);
+                        }
+                    }
+
+                    if i == 0 && other.is_deadly {
+                        if let CollisionType::Weak | CollisionType::Strong = collision {
+                            println!("=========== OOF ==========");
+                            process::exit(0);
+                        }
+                    }
+                    // }
                 });
 
                 // enforce binding constraints
@@ -397,6 +451,11 @@ impl Engine {
                 });
 
                 i += 1;
+            }
+            to_remove.dedup();
+            to_remove.sort();
+            for i in to_remove.into_iter().rev() {
+                self.entities.remove(i);
             }
         }
 
