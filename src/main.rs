@@ -1,7 +1,7 @@
 use crossbeam::channel::{self, TryRecvError};
-use game_logic::{EditorState, GameState};
+use game_logic::GameState;
 use geometry::Point;
-use levels::{Entity, Level, LoadError};
+use levels::{Level, LoadError};
 use std::{
     env, thread,
     time::{Duration, Instant},
@@ -23,8 +23,6 @@ pub enum InputMessage {
     DrawCircle(geometry::Circle),
     Angle(f32),
     Jump,
-    CreateLevelShape([f32; 2], [f32; 2], EditorState),
-    RemoveLastShape,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -71,32 +69,11 @@ fn main() -> Result<(), ArgError> {
                     Ok(InputMessage::DrawCircle(geometry::Circle { center, radius })) => {
                         physics.add_circle(Circle::new(center, radius))
                     }
-                    Ok(InputMessage::CreateLevelShape(p1, p2, ed)) => {
-                        level.polygons.push(Entity {
-                            shape: vec![
-                                Point(p1[0].into(), p1[1].into()),
-                                Point(p1[0].into(), p2[1].into()),
-                                Point(p2[0].into(), p2[1].into()),
-                                Point(p2[0].into(), p1[1].into()),
-                            ],
-                            is_static: true,
-                            is_bindable: false,
-                            is_deadly: ed.is_deadly,
-                            is_fragile: ed.is_fragile,
-                        });
-                        level.save_to_file("edited.ron");
-                        break;
-                    }
                     Ok(InputMessage::DrawCircle(geometry::Circle { center, radius })) => {
                         physics.add_circle(Circle::new(center, radius))
                     }
                     Ok(InputMessage::Angle(angle)) => { /* TODO JEREMI */ }
                     Ok(InputMessage::Jump) => { /* TODO JEREMI */ }
-                    Ok(InputMessage::RemoveLastShape) => {
-                        level.polygons.pop();
-                        level.save_to_file("edited.ron");
-                        break;
-                    }
                     Err(TryRecvError::Disconnected) => return,
                     Err(TryRecvError::Empty) => {}
                 }
