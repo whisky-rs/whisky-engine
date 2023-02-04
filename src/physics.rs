@@ -601,7 +601,8 @@ impl Engine {
 
     pub fn jump(&mut self) {
         let main_ball_mut = self.main_ball.upgrade().unwrap();
-        main_ball_mut.borrow_mut().collision_data_mut().velocity.1 += 1.;
+        main_ball_mut.borrow_mut().collision_data_mut().velocity +=
+            Point(0.0, 1.0).rotate(-self.angle as f64);
     }
 }
 
