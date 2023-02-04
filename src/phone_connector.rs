@@ -40,7 +40,7 @@ async fn handle_messages(channel: Sender<Message>) -> Result<(), Box<dyn Error>>
         sink.for_each(|message| async {
             match handle_message(message).await {
                 Ok(angle) => {
-                    channel.try_send(Message::AngleDiff(angle));
+                    channel.try_send(Message::AngleDiff(angle * 2.0));
                 }
                 Err(err) => eprintln!("{err}"),
             };
