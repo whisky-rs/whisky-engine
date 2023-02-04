@@ -154,7 +154,6 @@ impl Circle {
 pub struct Laser {
     pub point: Point,
     pub direction: Vector,
-    pub range: (Vector, Vector),
     pub change: f64,
 }
 

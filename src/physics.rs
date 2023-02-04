@@ -312,7 +312,7 @@ impl Engine {
                     .iter()
                     .any(|entity| entity.shape.borrow().includes(end_point));
                 if result {
-                    let offset = laser.direction.rotate(consts::PI / 2.) * 0.01;
+                    let offset = laser.direction.rotate(consts::PI / 2.) * 0.1;
                     let start_point_second = start_point + offset;
                     let end_point_second = end_point + offset;
                     laser_polygons.push(Polygon::new(vec![
@@ -362,7 +362,7 @@ impl Engine {
                     .iter()
                     .any(|entity| entity.shape.borrow().includes(end_point));
                 if result {
-                    let offset = laser.direction.rotate(consts::PI / 2.) * 0.01;
+                    let offset = laser.direction.perpendicular().unit() * 0.02;
                     let start_point_second = start_point + offset;
                     let end_point_second = end_point + offset;
                     laser_polygons.push(Polygon::new(vec![
