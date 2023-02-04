@@ -10,10 +10,11 @@ use crate::{
 };
 use std::time::{Duration, Instant};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct EditorState {
     pub is_deadly: bool,
     pub is_fragile: bool,
+    pub free_quad: Vec<[f32; 2]>,
 }
 
 pub struct GameState {
