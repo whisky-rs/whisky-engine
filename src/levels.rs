@@ -2,10 +2,14 @@ use std::{fs, io, path::Path};
 
 use serde::{Deserialize, Serialize};
 
-use crate::geometry::{Circle, Point, Vector, Laser};
+use crate::geometry::{Circle, Laser, Point, Vector};
 
 fn initialize_false() -> bool {
     false
+}
+
+fn initialize_empty() -> Vec<Laser> {
+    vec![]
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -28,6 +32,7 @@ pub struct Level {
     pub initial_ball_position: Point,
     pub circles: Vec<Entity<Circle>>,
     pub polygons: Vec<Entity<Vec<Point>>>,
+    #[serde(default = "initialize_empty")]
     pub lasers: Vec<Laser>,
     pub flags_positions: Vec<Point>,
 }

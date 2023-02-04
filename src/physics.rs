@@ -1,9 +1,10 @@
 use std::{
     cell::RefCell,
+    f64::consts,
     os::raw::c_void,
     process,
     rc::{Rc, Weak},
-    time::Instant, f64::consts,
+    time::Instant,
 };
 
 use crossbeam::channel::{self, TrySendError};
@@ -14,7 +15,7 @@ use self::{
     shape::{Circle, Collidable, Polygon},
 };
 use crate::{
-    geometry::{self, Point, Vector, Laser},
+    geometry::{self, Laser, Point, Vector},
     levels::Level,
 };
 
@@ -74,12 +75,13 @@ fn to_geometry<G>(
     geometry_shapes
 }
 
-fn laser_to_geometry(
-    lasers: Vec<Polygon>,
-) -> Vec<WithColor<geometry::Polygon>> {
+fn laser_to_geometry(lasers: Vec<Polygon>) -> Vec<WithColor<geometry::Polygon>> {
     let mut geometry_shapes = Vec::with_capacity(lasers.len());
     for laser in lasers.iter() {
-        let colored_laser = WithColor::from(laser);
+        let colored_laser = WithColor {
+            shape: laser,
+            color: [0.0, 0.0, 0.8],
+        };
         geometry_shapes.push(WithColor {
             color: colored_laser.color,
             shape: laser.clone().into(),
@@ -234,12 +236,9 @@ impl Engine {
             },
         );
 
-
         engine.main_ball = main_ball_weak.clone();
 
         engine.circles.push(main_ball_weak.into());
-
-
 
         for entity in polygons {
             let weak = engine.add_entity(
@@ -273,18 +272,25 @@ impl Engine {
             let delta = laser.direction * 0.1;
             let mut end_point = start_point + delta;
             loop {
-                let result = engine.entities.iter().any(|entity| entity.shape.borrow().includes(end_point));
+                let result = engine
+                    .entities
+                    .iter()
+                    .any(|entity| entity.shape.borrow().includes(end_point));
                 if result {
                     let offset = laser.direction.rotate(consts::PI / 2.) * 0.01;
                     let start_point_second = start_point + offset;
                     let end_point_second = end_point + offset;
-                    laser_polygons.push(Polygon::new(vec![start_point, end_point, end_point_second, start_point_second]));
+                    laser_polygons.push(Polygon::new(vec![
+                        start_point,
+                        end_point,
+                        end_point_second,
+                        start_point_second,
+                    ]));
                     break;
                 }
                 end_point += delta;
             }
         }
-
 
         engine.prune_and_send_shapes(laser_polygons);
         engine
@@ -310,18 +316,26 @@ impl Engine {
         });
 
         //  generate laser polygons
-        let mut laser_polygons: Vec<Polygon> = Vec::new();
+        let mut laser_polygons: Vec<Polygon> = Vec::with_capacity(self.lasers.len());
         for laser in self.lasers.iter() {
             let start_point = laser.point;
             let delta = laser.direction * 0.1;
             let mut end_point = start_point + delta;
             loop {
-                let result = self.entities.iter().any(|entity| entity.shape.borrow().includes(end_point));
+                let result = self
+                    .entities
+                    .iter()
+                    .any(|entity| entity.shape.borrow().includes(end_point));
                 if result {
                     let offset = laser.direction.rotate(consts::PI / 2.) * 0.01;
                     let start_point_second = start_point + offset;
                     let end_point_second = end_point + offset;
-                    laser_polygons.push(Polygon::new(vec![start_point, end_point, end_point_second, start_point_second]));
+                    laser_polygons.push(Polygon::new(vec![
+                        start_point,
+                        end_point,
+                        end_point_second,
+                        start_point_second,
+                    ]));
                     break;
                 }
                 end_point += delta;
@@ -456,7 +470,6 @@ impl Engine {
         for laser in &mut self.lasers {
             laser.direction.rotate(laser.change);
         }
-
     }
 
     pub fn try_bind(&mut self, new_shape: &Rc<RefCell<dyn Collidable>>) {

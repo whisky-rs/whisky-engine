@@ -1,6 +1,6 @@
 use crossbeam::channel::{self, TryRecvError};
 use game_logic::GameState;
-use geometry::Point;
+use geometry::{Laser, Point};
 use levels::{Level, LoadError};
 use std::{
     env, thread,
@@ -39,7 +39,13 @@ fn main() -> Result<(), ArgError> {
     let (shapes_tx, shapes_rx) = channel::bounded(1);
     let (messages_tx, messages_rx) = channel::unbounded();
 
-    let level = Level::load_from_file(&env::args().nth(1).ok_or(ArgError::MissingFileName)?)?;
+    let mut level = Level::load_from_file(&env::args().nth(1).ok_or(ArgError::MissingFileName)?)?;
+    level.lasers.push(Laser {
+        change: 0.0,
+        range: (Point::ZERO, Point::ZERO),
+        direction: Point(0.1, 0.1),
+        point: Point::ZERO,
+    });
 
     let game_state = GameState {
         mouse_position: [1.5, 1.5],
