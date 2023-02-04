@@ -3,7 +3,7 @@ use std::{
     os::raw::c_void,
     process,
     rc::{Rc, Weak},
-    time::Instant,
+    time::Instant, f64::consts,
 };
 
 use crossbeam::channel::{self, TrySendError};
@@ -14,7 +14,7 @@ use self::{
     shape::{Circle, Collidable, Polygon},
 };
 use crate::{
-    geometry::{self, Point, Vector},
+    geometry::{self, Point, Vector, Laser},
     levels::Level,
 };
 
@@ -71,6 +71,20 @@ fn to_geometry<G>(
             false
         }
     });
+    geometry_shapes
+}
+
+fn laser_to_geometry(
+    lasers: Vec<Polygon>,
+) -> Vec<WithColor<geometry::Polygon>> {
+    let mut geometry_shapes = Vec::with_capacity(lasers.len());
+    for laser in lasers.iter() {
+        let colored_laser = WithColor::from(laser);
+        geometry_shapes.push(WithColor {
+            color: colored_laser.color,
+            shape: laser.clone().into(),
+        });
+    }
     geometry_shapes
 }
 
@@ -171,6 +185,7 @@ pub struct Engine {
     last_iteration: Instant,
     main_ball: Weak<RefCell<Circle>>,
     pub angle: f32,
+    lasers: Vec<Laser>,
 }
 
 impl Engine {
@@ -180,6 +195,7 @@ impl Engine {
             initial_ball_position,
             circles,
             polygons,
+            lasers,
             flags_positions,
         }: Level,
     ) -> Self {
@@ -206,6 +222,7 @@ impl Engine {
             last_iteration: Instant::now(),
             main_ball: Weak::new(),
             angle: 0.0,
+            lasers,
         };
 
         let main_ball_weak = engine.add_entity(
@@ -217,9 +234,12 @@ impl Engine {
             },
         );
 
+
         engine.main_ball = main_ball_weak.clone();
 
         engine.circles.push(main_ball_weak.into());
+
+
 
         for entity in polygons {
             let weak = engine.add_entity(
@@ -246,7 +266,27 @@ impl Engine {
             engine.circles.push(weak.into())
         }
 
-        engine.prune_and_send_shapes();
+        //  generate laser polygons
+        let mut laser_polygons: Vec<Polygon> = Vec::new();
+        for laser in engine.lasers.iter() {
+            let start_point = laser.point;
+            let delta = laser.direction * 0.1;
+            let mut end_point = start_point + delta;
+            loop {
+                let result = engine.entities.iter().any(|entity| entity.shape.borrow().includes(end_point));
+                if result {
+                    let offset = laser.direction.rotate(consts::PI / 2.) * 0.01;
+                    let start_point_second = start_point + offset;
+                    let end_point_second = end_point + offset;
+                    laser_polygons.push(Polygon::new(vec![start_point, end_point, end_point_second, start_point_second]));
+                    break;
+                }
+                end_point += delta;
+            }
+        }
+
+
+        engine.prune_and_send_shapes(laser_polygons);
         engine
     }
 
@@ -268,6 +308,25 @@ impl Engine {
             is_main_ball = false;
             retain
         });
+
+        //  generate laser polygons
+        let mut laser_polygons: Vec<Polygon> = Vec::new();
+        for laser in self.lasers.iter() {
+            let start_point = laser.point;
+            let delta = laser.direction * 0.1;
+            let mut end_point = start_point + delta;
+            loop {
+                let result = self.entities.iter().any(|entity| entity.shape.borrow().includes(end_point));
+                if result {
+                    let offset = laser.direction.rotate(consts::PI / 2.) * 0.01;
+                    let start_point_second = start_point + offset;
+                    let end_point_second = end_point + offset;
+                    laser_polygons.push(Polygon::new(vec![start_point, end_point, end_point_second, start_point_second]));
+                    break;
+                }
+                end_point += delta;
+            }
+        }
 
         // return main ball to starting point if out of bounds
         // and check win condition
@@ -328,11 +387,11 @@ impl Engine {
         }
 
         if self.channel.is_empty() {
-            self.prune_and_send_shapes();
+            self.prune_and_send_shapes(laser_polygons);
         }
     }
 
-    fn prune_and_send_shapes(&mut self) {
+    fn prune_and_send_shapes(&mut self, laser_polygons: Vec<Polygon>) {
         let mut rigid_bindings = Vec::new();
         let mut hinges = Vec::new();
         let mut unbound_rigid_bindings = Vec::new();
@@ -370,6 +429,10 @@ impl Engine {
         let mut polygons: Vec<WithColor<geometry::Polygon>> = to_geometry(&mut self.polygons);
         let mut circles: Vec<WithColor<geometry::Circle>> = to_geometry(&mut self.circles);
 
+        for laser in laser_to_geometry(laser_polygons) {
+            polygons.push(laser);
+        }
+
         for polygon in &mut polygons {
             polygon.shape.rotate(self.angle);
         }
@@ -389,6 +452,11 @@ impl Engine {
         }) {
             panic!("failed to send");
         }
+
+        for laser in &mut self.lasers {
+            laser.direction.rotate(laser.change);
+        }
+
     }
 
     pub fn try_bind(&mut self, new_shape: &Rc<RefCell<dyn Collidable>>) {

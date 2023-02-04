@@ -2,7 +2,7 @@ use std::{fs, io, path::Path};
 
 use serde::{Deserialize, Serialize};
 
-use crate::geometry::{Circle, Point};
+use crate::geometry::{Circle, Point, Vector, Laser};
 
 fn initialize_false() -> bool {
     false
@@ -28,6 +28,7 @@ pub struct Level {
     pub initial_ball_position: Point,
     pub circles: Vec<Entity<Circle>>,
     pub polygons: Vec<Entity<Vec<Point>>>,
+    pub lasers: Vec<Laser>,
     pub flags_positions: Vec<Point>,
 }
 
