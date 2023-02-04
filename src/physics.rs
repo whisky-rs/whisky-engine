@@ -527,7 +527,8 @@ impl Engine {
         }
 
         for laser in &mut self.lasers {
-            laser.direction.rotate(laser.change);
+            laser.direction = laser.direction.rotate(laser.change);
+
         }
     }
 
