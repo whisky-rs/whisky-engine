@@ -57,6 +57,7 @@ pub struct DisplayMessage {
     pub lasers: Vec<WithColor<geometry::Polygon>>,
     pub laser_boxes: Vec<WithColor<geometry::Polygon>>,
     pub doors: Vec<WithColor<geometry::Polygon>>,
+    pub level_idx: usize,
 }
 
 fn to_geometry<G>(
@@ -589,6 +590,9 @@ impl Engine {
             lasers,
             laser_boxes,
             doors,
+            level_idx: self.level_stack.last().unwrap().trim_start_matches("level")[..1]
+                .parse()
+                .unwrap(),
         }) {
             panic!("failed to send");
         }

@@ -1,5 +1,4 @@
 use crossbeam::channel;
-use winit::event::{KeyboardInput, ElementState};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::vec;
@@ -24,6 +23,7 @@ use vulkano::{
     sync::{self, FlushError, GpuFuture},
 };
 use winit::dpi::LogicalPosition;
+use winit::event::{ElementState, KeyboardInput};
 use winit::{
     event::{Event, WindowEvent},
     event_loop::ControlFlow,
@@ -108,7 +108,6 @@ pub fn run(
 
     let dimensions = window.inner_size();
 
-
     let mut first_frame = AutoCommandBufferBuilder::primary(
         &command_buffer_allocator,
         queue.queue_family_index(),
@@ -175,7 +174,7 @@ pub fn run(
         &descriptor_set_allocator,
     );
 
-    let level_status_set =  texture::Texture::new(
+    let level_status_set = texture::Texture::new(
         device.clone(),
         &[
             "assets/images/file-tree-0-green.png",
@@ -226,6 +225,7 @@ pub fn run(
     let mut is_first_run = true;
     let mut circles_vertices = vec![];
     let mut polygons_vertices = vec![];
+    let mut lvl_idx = 0;
 
     let window = surface.object().unwrap().downcast_ref::<Window>().unwrap();
     window.set_cursor_visible(false);
@@ -351,16 +351,14 @@ pub fn run(
 
             match channel.try_recv() {
                 Ok(received) => {
-                    (
-                        polygons_vertices,
-                        circles_vertices,
-                    ) = format_data((
+                    (polygons_vertices, circles_vertices) = format_data((
                         received.polygons,
                         received.circles,
                         received.lasers,
                         received.laser_boxes,
                         received.doors,
                     ));
+                    lvl_idx = received.level_idx;
                 }
                 Err(channel::TryRecvError::Disconnected) => *control_flow = ControlFlow::Exit,
                 _ => {}
@@ -426,25 +424,25 @@ pub fn run(
                     Vertex {
                         position: [-0.9, -0.9],
                         tex_position: [0.0, 0.0],
-                        texture_id: animation_or_sth,
+                        texture_id: lvl_idx as u32,
                         ..Default::default()
                     },
                     Vertex {
                         position: [-0.9, -0.5],
                         tex_position: [0.0, 1.0],
-                        texture_id: animation_or_sth,
+                        texture_id: lvl_idx as u32,
                         ..Default::default()
                     },
                     Vertex {
                         position: [-0.2, -0.9],
                         tex_position: [1.0, 0.0],
-                        texture_id: animation_or_sth,
+                        texture_id: lvl_idx as u32,
                         ..Default::default()
                     },
                     Vertex {
                         position: [-0.2, -0.5],
                         tex_position: [1.0, 1.0],
-                        texture_id: animation_or_sth,
+                        texture_id: lvl_idx as u32,
                         ..Default::default()
                     },
                 ],
@@ -522,7 +520,11 @@ fn format_data(
         Vec<WithColor<Polygon>>,
     ),
 ) -> (Vec<Vertex>, Vec<Vertex>) {
-    let array = polygons.into_iter().chain(lasers.into_iter()).chain(laser_boxes.into_iter()).chain(doors.into_iter());
+    let array = polygons
+        .into_iter()
+        .chain(lasers.into_iter())
+        .chain(laser_boxes.into_iter())
+        .chain(doors.into_iter());
     let polygons_vertexes = array
         .enumerate()
         .flat_map(|(i, pol)| {
