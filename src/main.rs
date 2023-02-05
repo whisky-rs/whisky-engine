@@ -41,11 +41,6 @@ fn main() -> Result<(), ArgError> {
     let (phone_tx, phone_rx) = channel::unbounded();
 
     let mut level = Level::load_from_file(&env::args().nth(1).ok_or(ArgError::MissingFileName)?)?;
-    level.lasers.push(Laser {
-        change: 0.01,
-        direction: Point(-0.1, 0.1),
-        point: Point::ZERO,
-    });
     phone_connector::listen_for_phone(phone_tx);
 
     let game_state = GameState {

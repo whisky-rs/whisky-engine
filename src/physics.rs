@@ -3,7 +3,7 @@ use std::{
     f64::consts,
     rc::{Rc, Weak},
     time::Instant,
-    vec,
+    vec, f32::consts::E,
 };
 
 use crossbeam::channel::{self, TrySendError};
@@ -376,12 +376,12 @@ impl Engine {
         let mut laser_boxes: Vec<Polygon> = Vec::with_capacity(self.lasers.len());
         for laser in self.lasers.iter() {
             let center = laser.point;
-            let x_offset = Point(0.05, 0.);
-            let y_offset = Point(0., 0.05);
+            let x_offset = Point(0.03, 0.);
+            let y_offset = Point(0., 0.03);
             let first = center - x_offset - y_offset;
             let second = center - x_offset + y_offset;
             let third = center + x_offset + y_offset;
-            let fourth = center + x_offset + y_offset;
+            let fourth = center + x_offset - y_offset;
             laser_boxes.push(Polygon::new(vec![first, second, third, fourth]));
         }
         self.laser_boxes = laser_boxes;
@@ -572,8 +572,14 @@ impl Engine {
         }) {
             panic!("failed to send");
         }
-
         for laser in &mut self.lasers {
+            if (Vector::angle_to(laser.inital_direction, laser.direction)).abs() >= laser.range && !laser.is_out {
+                laser.is_out = true;
+                laser.change *= -1.;
+            } else {
+                laser.is_out = false;
+            }
+            // println!("{}", Vector::angle_to(laser.inital_direction, laser.direction));
             laser.direction = laser.direction.rotate(laser.change);
         }
     }
