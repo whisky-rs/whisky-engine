@@ -327,8 +327,16 @@ pub fn run(
 
             match channel.try_recv() {
                 Ok(received) => {
-                    (polygons_vertices, circles_vertices) =
-                        format_data((received.polygons, received.circles));
+                    (
+                        polygons_vertices,
+                        circles_vertices,
+                    ) = format_data((
+                        received.polygons,
+                        received.circles,
+                        received.lasers,
+                        received.laser_boxes,
+                        received.doors,
+                    ));
                 }
                 Err(channel::TryRecvError::Disconnected) => *control_flow = ControlFlow::Exit,
                 _ => {}
@@ -451,10 +459,16 @@ fn create_vertex_buffer(
 
 /// Changes Polygon to correct order of Vertexes, also creates quads needed to draw cricles
 fn format_data(
-    (polygons, circles): (Vec<WithColor<Polygon>>, Vec<WithColor<Circle>>),
+    (polygons, circles, lasers, laser_boxes, doors): (
+        Vec<WithColor<Polygon>>,
+        Vec<WithColor<Circle>>,
+        Vec<WithColor<Polygon>>,
+        Vec<WithColor<Polygon>>,
+        Vec<WithColor<Polygon>>,
+    ),
 ) -> (Vec<Vertex>, Vec<Vertex>) {
-    let polygons_vertexes = polygons
-        .into_iter()
+    let array = polygons.into_iter().chain(lasers.into_iter()).chain(laser_boxes.into_iter()).chain(doors.into_iter());
+    let polygons_vertexes = array
         .enumerate()
         .flat_map(|(i, pol)| {
             std::iter::once(Vertex {
