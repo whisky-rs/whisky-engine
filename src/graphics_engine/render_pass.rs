@@ -186,10 +186,10 @@ draw_text.queue_text(50.0, 350.0, 70.0, [1.0, 1.0, 1.0, 1.0], "Overlap");
             )
             .unwrap()
             .set_viewport(0, [viewport.clone()])
-            .bind_pipeline_graphics(pipelines.texture_pipeline.clone())
+            .bind_pipeline_graphics(pipelines.texture_array_pipeline.clone())
             .bind_descriptor_sets(
                 PipelineBindPoint::Graphics,
-                pipelines.texture_pipeline.layout().clone(),
+                pipelines.texture_array_pipeline.layout().clone(),
                 0,
                 textures.background.0.clone(),
             )
