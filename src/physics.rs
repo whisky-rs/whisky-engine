@@ -54,6 +54,9 @@ pub struct DisplayMessage {
     pub hinges: Vec<Point>,
     pub unbound_rigid_bindings: Vec<Point>,
     pub unbound_hinges: Vec<Point>,
+    pub lasers: Vec<WithColor<geometry::Polygon>>,
+    pub laser_boxes: Vec<WithColor<geometry::Polygon>>,
+    pub doors: Vec<WithColor<geometry::Polygon>>
 }
 
 fn to_geometry<G>(
@@ -74,9 +77,9 @@ fn to_geometry<G>(
     geometry_shapes
 }
 
-fn laser_to_geometry(lasers: Vec<Polygon>) -> Vec<WithColor<geometry::Polygon>> {
-    let mut geometry_shapes = Vec::with_capacity(lasers.len());
-    for laser in lasers.iter() {
+fn polygon_to_geometry(polygons: Vec<Polygon>) -> Vec<WithColor<geometry::Polygon>> {
+    let mut geometry_shapes = Vec::with_capacity(polygons.len());
+    for laser in polygons.iter() {
         let colored_laser = WithColor {
             shape: laser,
             color: [0.0, 0.0, 0.8],
@@ -191,12 +194,14 @@ pub struct Engine {
     // weak pointers then they would have to be manually updated after removing an entity
     polygons: Vec<WithColor<Weak<RefCell<Polygon>>>>,
     circles: Vec<WithColor<Weak<RefCell<Circle>>>>,
+    lasers: Vec<Laser>,
+    doors: Vec<Polygon>,
+    laser_boxes: Vec<Polygon>,
     main_ball_starting_position: Point,
     flags: Vec<Polygon>,
     last_iteration: Instant,
     main_ball: Weak<RefCell<Circle>>,
     pub angle: f32,
-    lasers: Vec<Laser>,
     jumps_count: usize,
     pub next_level: Option<String>,
 }
@@ -209,11 +214,15 @@ impl Engine {
             circles,
             polygons,
             lasers,
+            doors,
             flags_positions,
         }: Level,
     ) -> Self {
         let n_of_circles = circles.len() + 1;
         let n_of_polygons = polygons.len();
+        let n_of_laser_boxes = lasers.len();
+
+        let doors = doors.iter().map(|temp_door| Polygon::new(temp_door.clone())).collect();
 
         let mut engine = Self {
             channel,
@@ -236,6 +245,8 @@ impl Engine {
             main_ball: Weak::new(),
             angle: 0.0,
             lasers,
+            laser_boxes: Vec::with_capacity(n_of_laser_boxes),
+            doors,
             jumps_count: 2,
             next_level: None,
         };
@@ -302,34 +313,6 @@ impl Engine {
             });
         }
 
-        //  generate laser polygons
-        let mut laser_polygons: Vec<Polygon> = Vec::new();
-        for laser in engine.lasers.iter() {
-            let start_point = laser.point;
-            let delta = laser.direction * 0.1;
-            let mut end_point = start_point + delta;
-            loop {
-                let result = engine
-                    .entities
-                    .iter()
-                    .any(|entity| entity.shape.borrow().includes(end_point));
-                if result {
-                    let offset = laser.direction.rotate(consts::PI / 2.) * 0.1;
-                    let start_point_second = start_point + offset;
-                    let end_point_second = end_point + offset;
-                    laser_polygons.push(Polygon::new(vec![
-                        start_point,
-                        end_point,
-                        end_point_second,
-                        start_point_second,
-                    ]));
-                    break;
-                }
-                end_point += delta;
-            }
-        }
-
-        engine.prune_and_send_shapes(laser_polygons);
         engine
     }
 
@@ -385,6 +368,21 @@ impl Engine {
                 end_point += delta;
             }
         }
+
+        // generate laser boxes
+        let mut laser_boxes: Vec<Polygon> = Vec::with_capacity(self.lasers.len());
+        for laser in self.lasers.iter() {
+            let center = laser.point;
+            let x_offset = Point(0.05, 0.);
+            let y_offset = Point(0., 0.05);
+            let first = center - x_offset - y_offset;
+            let second = center - x_offset + y_offset;
+            let third = center + x_offset + y_offset;
+            let fourth = center + x_offset + y_offset;
+            laser_boxes.push(Polygon::new(vec![first, second, third, fourth]));
+        }
+        self.laser_boxes = laser_boxes;
+
 
         // return main ball to starting point if out of bounds
         // and check win condition
@@ -517,9 +515,23 @@ impl Engine {
         let mut polygons: Vec<WithColor<geometry::Polygon>> = to_geometry(&mut self.polygons);
         let mut circles: Vec<WithColor<geometry::Circle>> = to_geometry(&mut self.circles);
 
-        for laser in laser_to_geometry(laser_polygons) {
-            polygons.push(laser);
+        let mut lasers: Vec<WithColor<geometry::Polygon>> = Vec::with_capacity(laser_polygons.len());
+        let mut laser_boxes: Vec<WithColor<geometry::Polygon>> = Vec::with_capacity(self.laser_boxes.len());
+        let mut doors: Vec<WithColor<geometry::Polygon>> = Vec::with_capacity(self.doors.len());
+
+        for laser in polygon_to_geometry(laser_polygons) {
+            lasers.push(laser);
         }
+
+        for laser_box in polygon_to_geometry(self.doors.clone()) {
+            laser_boxes.push(laser_box);
+        }
+
+
+        for door in polygon_to_geometry(self.laser_boxes.clone()) {
+            doors.push(door);
+        }
+
 
         for polygon in &mut polygons {
             polygon.shape.rotate(self.angle);
@@ -537,6 +549,9 @@ impl Engine {
             hinges,
             unbound_rigid_bindings,
             unbound_hinges,
+            lasers,
+            laser_boxes,
+            doors,
         }) {
             panic!("failed to send");
         }
