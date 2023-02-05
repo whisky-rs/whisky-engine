@@ -56,7 +56,7 @@ pub struct DisplayMessage {
     pub unbound_hinges: Vec<Point>,
     pub lasers: Vec<WithColor<geometry::Polygon>>,
     pub laser_boxes: Vec<WithColor<geometry::Polygon>>,
-    pub doors: Vec<WithColor<geometry::Polygon>>
+    pub doors: Vec<WithColor<geometry::Polygon>>,
 }
 
 fn to_geometry<G>(
@@ -222,7 +222,10 @@ impl Engine {
         let n_of_polygons = polygons.len();
         let n_of_laser_boxes = lasers.len();
 
-        let doors = doors.iter().map(|temp_door| Polygon::new(temp_door.clone())).collect();
+        let doors = doors
+            .iter()
+            .map(|temp_door| Polygon::new(temp_door.clone()))
+            .collect();
 
         let mut engine = Self {
             channel,
@@ -383,7 +386,6 @@ impl Engine {
         }
         self.laser_boxes = laser_boxes;
 
-
         // return main ball to starting point if out of bounds
         // and check win condition
         {
@@ -402,7 +404,10 @@ impl Engine {
 
             while let [this, rest @ ..] = &mut self.entities[i..] {
                 let mut shape = this.shape.borrow_mut();
-
+                if shape.collision_data_mut().inertia < 0.0 || shape.collision_data_mut().mass < 0.0
+                {
+                    println!("Fuck {i}");
+                }
                 // collide them if they are not bound
                 rest.iter_mut().enumerate().for_each(|(j, other)| {
                     if this.is_static && other.is_static {
@@ -515,8 +520,10 @@ impl Engine {
         let mut polygons: Vec<WithColor<geometry::Polygon>> = to_geometry(&mut self.polygons);
         let mut circles: Vec<WithColor<geometry::Circle>> = to_geometry(&mut self.circles);
 
-        let mut lasers: Vec<WithColor<geometry::Polygon>> = Vec::with_capacity(laser_polygons.len());
-        let mut laser_boxes: Vec<WithColor<geometry::Polygon>> = Vec::with_capacity(self.laser_boxes.len());
+        let mut lasers: Vec<WithColor<geometry::Polygon>> =
+            Vec::with_capacity(laser_polygons.len());
+        let mut laser_boxes: Vec<WithColor<geometry::Polygon>> =
+            Vec::with_capacity(self.laser_boxes.len());
         let mut doors: Vec<WithColor<geometry::Polygon>> = Vec::with_capacity(self.doors.len());
 
         for laser in polygon_to_geometry(laser_polygons) {
@@ -527,11 +534,9 @@ impl Engine {
             laser_boxes.push(laser_box);
         }
 
-
         for door in polygon_to_geometry(self.laser_boxes.clone()) {
             doors.push(door);
         }
-
 
         for polygon in &mut polygons {
             polygon.shape.rotate(self.angle);
