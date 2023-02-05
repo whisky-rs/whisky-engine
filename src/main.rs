@@ -41,6 +41,15 @@ fn main() -> Result<(), ArgError> {
     let (phone_tx, phone_rx) = channel::unbounded();
 
     let mut level = Level::load_from_file(&env::args().nth(1).ok_or(ArgError::MissingFileName)?)?;
+    level.doors.push((
+        vec![
+            Point(0.1, 0.1),
+            Point(0.1, 0.2),
+            Point(0.2, 0.2),
+            Point(0.2, 0.1),
+        ],
+        "level3.ron".to_string(),
+    ));
     phone_connector::listen_for_phone(phone_tx);
 
     let game_state = GameState {
@@ -59,7 +68,8 @@ fn main() -> Result<(), ArgError> {
         loop {
             if let Some(ref next_level) = physics.next_level {
                 let level = Level::load_from_file(next_level).unwrap();
-                physics = physics.reload_level(level);
+                let name_owned = next_level.clone();
+                physics = physics.reload_level(level, name_owned);
             }
             match phone_rx.try_recv() {
                 Ok(phone_connector::Message::Connected) => connected = true,

@@ -57,6 +57,7 @@ pub struct DisplayMessage {
     pub lasers: Vec<WithColor<geometry::Polygon>>,
     pub laser_boxes: Vec<WithColor<geometry::Polygon>>,
     pub doors: Vec<WithColor<geometry::Polygon>>,
+    pub level_idx: usize,
 }
 
 fn to_geometry<G>(
@@ -77,12 +78,15 @@ fn to_geometry<G>(
     geometry_shapes
 }
 
-fn polygon_to_geometry(polygons: Vec<Polygon>) -> Vec<WithColor<geometry::Polygon>> {
+fn polygon_to_geometry(
+    polygons: Vec<Polygon>,
+    color: [f32; 3],
+) -> Vec<WithColor<geometry::Polygon>> {
     let mut geometry_shapes = Vec::with_capacity(polygons.len());
     for laser in polygons.iter() {
         let colored_laser = WithColor {
             shape: laser,
-            color: [0.0, 0.0, 0.8],
+            color,
         };
         geometry_shapes.push(WithColor {
             color: colored_laser.color,
@@ -195,7 +199,7 @@ pub struct Engine {
     polygons: Vec<WithColor<Weak<RefCell<Polygon>>>>,
     circles: Vec<WithColor<Weak<RefCell<Circle>>>>,
     lasers: Vec<Laser>,
-    doors: Vec<Polygon>,
+    doors: Vec<(Polygon, String)>,
     laser_boxes: Vec<Polygon>,
     main_ball_starting_position: Point,
     flags: Vec<Polygon>,
@@ -204,6 +208,7 @@ pub struct Engine {
     pub angle: f32,
     jumps_count: usize,
     pub next_level: Option<String>,
+    level_stack: Vec<String>,
 }
 
 impl Engine {
@@ -223,8 +228,8 @@ impl Engine {
         let n_of_laser_boxes = lasers.len();
 
         let doors = doors
-            .iter()
-            .map(|temp_door| Polygon::new(temp_door.clone()))
+            .into_iter()
+            .map(|temp_door| (Polygon::new(temp_door.0), temp_door.1))
             .collect();
 
         let mut engine = Self {
@@ -252,6 +257,7 @@ impl Engine {
             doors,
             jumps_count: 2,
             next_level: None,
+            level_stack: vec!["level5.ron".to_string()],
         };
 
         let main_ball_weak = engine.add_entity(
@@ -339,6 +345,13 @@ impl Engine {
             is_main_ball = false;
             retain
         });
+
+        for door in &self.doors {
+            if compute::collision(&door.0, &*self.main_ball.upgrade().unwrap().borrow()).is_some() {
+                self.next_level = Some(door.1.clone());
+                break;
+            }
+        }
 
         //  generate laser polygons
         let mut laser_polygons: Vec<Polygon> = Vec::with_capacity(self.lasers.len());
@@ -474,7 +487,12 @@ impl Engine {
         }
 
         if is_reset_level {
-            self.reset_level();
+            if self.level_stack.len() > 1 {
+                self.level_stack.pop();
+                self.next_level = Some(self.level_stack.last().unwrap().clone());
+            } else {
+                self.reset_level();
+            }
         }
 
         if is_reset_jumps {
@@ -526,15 +544,18 @@ impl Engine {
             Vec::with_capacity(self.laser_boxes.len());
         let mut doors: Vec<WithColor<geometry::Polygon>> = Vec::with_capacity(self.doors.len());
 
-        for laser in polygon_to_geometry(laser_polygons) {
+        for laser in polygon_to_geometry(laser_polygons, [0.0, 0.0, 1.0]) {
             lasers.push(laser);
         }
 
-        for laser_box in polygon_to_geometry(self.doors.clone()) {
+        for laser_box in polygon_to_geometry(self.laser_boxes.clone(), [0.0, 0.0, 1.0]) {
             laser_boxes.push(laser_box);
         }
 
-        for door in polygon_to_geometry(self.laser_boxes.clone()) {
+        for door in polygon_to_geometry(
+            self.doors.iter().map(|(d, _)| d.clone()).collect(),
+            [0.0, 1.0, 0.0],
+        ) {
             doors.push(door);
         }
 
@@ -569,6 +590,9 @@ impl Engine {
             lasers,
             laser_boxes,
             doors,
+            level_idx: self.level_stack.last().unwrap().trim_start_matches("level")[..1]
+                .parse()
+                .unwrap(),
         }) {
             panic!("failed to send");
         }
@@ -584,8 +608,12 @@ impl Engine {
         }
     }
 
-    pub fn reload_level(self, level: Level) -> Self {
-        Self::new(self.channel, level)
+    pub fn reload_level(self, level: Level, name: String) -> Self {
+        let mut engine = Self::new(self.channel, level);
+        let mut stack = self.level_stack;
+        stack.push(name);
+        engine.level_stack = stack;
+        engine
     }
 
     pub fn try_bind(&mut self, new_shape: &Rc<RefCell<dyn Collidable>>) {

@@ -23,6 +23,7 @@ use vulkano::{
     sync::{self, FlushError, GpuFuture},
 };
 use winit::dpi::LogicalPosition;
+use winit::event::{ElementState, KeyboardInput};
 use winit::{
     event::{Event, WindowEvent},
     event_loop::ControlFlow,
@@ -53,12 +54,14 @@ pub struct VertexBuffers {
     background: Arc<CpuAccessibleBuffer<[Vertex]>>,
     polygons: Arc<CpuAccessibleBuffer<[Vertex]>>,
     circles: Arc<CpuAccessibleBuffer<[Vertex]>>,
+    level_status: Arc<CpuAccessibleBuffer<[Vertex]>>,
 }
 
 pub struct Textures {
     background: texture::Texture,
     test_set: texture::Texture,
     ball: texture::Texture,
+    level: texture::Texture,
 }
 
 pub struct Pipelines {
@@ -104,15 +107,6 @@ pub fn run(
     let window = surface.object().unwrap().downcast_ref::<Window>().unwrap();
 
     let dimensions = window.inner_size();
-    let mut draw_text = DrawText::new(
-        device.clone(),
-        queue.clone(),
-        swapchain.clone(),
-        &images,
-        &memory_allocator,
-        [dimensions.width as u32, dimensions.height as u32],
-        max_sample_count,
-    );
 
     let mut first_frame = AutoCommandBufferBuilder::primary(
         &command_buffer_allocator,
@@ -180,10 +174,29 @@ pub fn run(
         &descriptor_set_allocator,
     );
 
+    let level_status_set = texture::Texture::new(
+        device.clone(),
+        &[
+            "assets/images/file-tree-0-green.png",
+            "assets/images/file-tree-1-green.png",
+            "assets/images/file-tree-2-green.png",
+            "assets/images/file-tree-3-green.png",
+            "assets/images/file-tree-4-green.png",
+            "assets/images/file-tree-5-green.png",
+            "assets/images/file-tree-6-green.png",
+        ],
+        &memory_allocator,
+        &mut first_frame,
+        MipmapsCount::One,
+        pipelines.texture_array_pipeline.clone(),
+        &descriptor_set_allocator,
+    );
+
     let game_textures = Textures {
         background: background_set,
         test_set,
         ball,
+        level: level_status_set,
     };
 
     let mut viewport = Viewport {
@@ -212,6 +225,7 @@ pub fn run(
     let mut is_first_run = true;
     let mut circles_vertices = vec![];
     let mut polygons_vertices = vec![];
+    let mut lvl_idx = 0;
 
     let window = surface.object().unwrap().downcast_ref::<Window>().unwrap();
     window.set_cursor_visible(false);
@@ -236,6 +250,16 @@ pub fn run(
             event: WindowEvent::KeyboardInput { input, .. },
             ..
         } => {
+            match input {
+                KeyboardInput {
+                    state: ElementState::Pressed,
+                    virtual_keycode: Some(winit::event::VirtualKeyCode::Escape),
+                    ..
+                } => {
+                    *control_flow = ControlFlow::Exit;
+                }
+                _ => {}
+            };
             game_state.handle_keyboard_input(input, &mut messages);
         }
         Event::WindowEvent {
@@ -327,16 +351,14 @@ pub fn run(
 
             match channel.try_recv() {
                 Ok(received) => {
-                    (
-                        polygons_vertices,
-                        circles_vertices,
-                    ) = format_data((
+                    (polygons_vertices, circles_vertices) = format_data((
                         received.polygons,
                         received.circles,
                         received.lasers,
                         received.laser_boxes,
                         received.doors,
                     ));
+                    lvl_idx = received.level_idx;
                 }
                 Err(channel::TryRecvError::Disconnected) => *control_flow = ControlFlow::Exit,
                 _ => {}
@@ -396,6 +418,36 @@ pub fn run(
                 ],
             );
 
+            let level_status_buffer = create_vertex_buffer(
+                &memory_allocator,
+                [
+                    Vertex {
+                        position: [-0.9, -0.9],
+                        tex_position: [0.0, 0.0],
+                        texture_id: lvl_idx as u32,
+                        ..Default::default()
+                    },
+                    Vertex {
+                        position: [-0.9, -0.5],
+                        tex_position: [0.0, 1.0],
+                        texture_id: lvl_idx as u32,
+                        ..Default::default()
+                    },
+                    Vertex {
+                        position: [-0.2, -0.9],
+                        tex_position: [1.0, 0.0],
+                        texture_id: lvl_idx as u32,
+                        ..Default::default()
+                    },
+                    Vertex {
+                        position: [-0.2, -0.5],
+                        tex_position: [1.0, 1.0],
+                        texture_id: lvl_idx as u32,
+                        ..Default::default()
+                    },
+                ],
+            );
+
             SimpleShapes::render(
                 &mut builder,
                 &mut framebuffers,
@@ -407,6 +459,7 @@ pub fn run(
                     background: texture_buffer.clone(),
                     polygons: vertex_buffer_polygons,
                     circles: vertex_buffer_circles,
+                    level_status: level_status_buffer,
                 },
             );
             let command_buffer = builder.build().unwrap();
@@ -467,7 +520,11 @@ fn format_data(
         Vec<WithColor<Polygon>>,
     ),
 ) -> (Vec<Vertex>, Vec<Vertex>) {
-    let array = polygons.into_iter().chain(lasers.into_iter()).chain(laser_boxes.into_iter()).chain(doors.into_iter());
+    let array = polygons
+        .into_iter()
+        .chain(lasers.into_iter())
+        .chain(laser_boxes.into_iter())
+        .chain(doors.into_iter());
     let polygons_vertexes = array
         .enumerate()
         .flat_map(|(i, pol)| {

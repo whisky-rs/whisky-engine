@@ -108,7 +108,7 @@ pub fn init() -> Init {
         );
         let window = surface.object().unwrap().downcast_ref::<Window>().unwrap();
         window.set_inner_size(PhysicalSize::new(950, 950));
-        window.set_title("Simple ZPR Game");
+        window.set_title("sudo rm -rf /");
 
         Swapchain::new(
             device.clone(),
