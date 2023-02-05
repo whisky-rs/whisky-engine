@@ -20,10 +20,10 @@ use vulkano::{
     },
     render_pass::{Framebuffer, RenderPass, Subpass},
     shader::ShaderModule,
-    swapchain::Swapchain,
+    swapchain::Swapchain, memory::allocator::{GenericMemoryAllocator, FreeListAllocator, MemoryAllocator}, descriptor_set::allocator::StandardDescriptorSetAllocator,
 };
 
-use super::{vertex::Vertex, Pipelines, Textures, VertexBuffers};
+use super::{vertex::Vertex, Pipelines, Textures, VertexBuffers, draw_text::{DrawText, DrawTextTrait}};
 
 pub struct SimpleShapes {
     pub command_buffer_allocator: StandardCommandBufferAllocator,
@@ -144,6 +144,7 @@ impl SimpleShapes {
             text_array_fs,
         );
 
+
         SimpleShapes {
             command_buffer_allocator,
             render_pass,
@@ -162,7 +163,19 @@ impl SimpleShapes {
         textures: &Textures,
         pipelines: &Pipelines,
         buffers: VertexBuffers,
+        mut draw_text: &mut DrawText,
+        image_num: usize,
+        dimensions: [usize; 2],
+        descriptor_set_allocator: &StandardDescriptorSetAllocator,
+        memory_allocator: &impl MemoryAllocator,
     ) {
+
+
+draw_text.queue_text(200.0, 50.0, 20.0, [1.0, 1.0, 1.0, 1.0], "The quick brown fox jumps over the lazy dog.");
+draw_text.queue_text(20.0, 200.0, 190.0, [0.0, 1.0, 1.0, 1.0], "Hello world!");
+draw_text.queue_text(50.0, 350.0, 70.0, [1.0, 1.0, 1.0, 1.0], "Overlap");
+
+
         builder
             .begin_render_pass(
                 RenderPassBeginInfo {
@@ -197,10 +210,9 @@ impl SimpleShapes {
             .bind_vertex_buffers(0, buffers.circles.clone())
             .draw(buffers.circles.len() as u32, 1, 0, 0)
             .unwrap()
-
-
             .end_render_pass()
             .unwrap();
+            // .draw_text(&mut draw_text, image_num, dimensions, descriptor_set_allocator, memory_allocator);
     }
 }
 
@@ -267,3 +279,4 @@ mod tex_array_fs {
         path: "shaders/fragment/texture_array_frag.glsl"
     }
 }
+

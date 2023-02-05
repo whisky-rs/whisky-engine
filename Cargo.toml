@@ -16,3 +16,4 @@ crossbeam = "0.8.2"
 serde = { version = "1.0.152", features = ["derive"] }
 ron = "0.8.0"
 thiserror = "1.0.38"
+rusttype = {version = "0.9.3", features = ["gpu_cache"]}

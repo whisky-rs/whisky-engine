@@ -1,11 +1,8 @@
 use crossbeam::channel;
-use ron::de;
 use std::sync::Arc;
-use std::time::Duration;
 use std::vec;
 use vulkano::image::{AttachmentImage, ImageUsage, SampleCount};
 use vulkano::memory::allocator::MemoryAllocator;
-use vulkano::pipeline::graphics::input_assembly::PrimitiveTopologyClass;
 use vulkano::pipeline::GraphicsPipeline;
 use vulkano::{
     buffer::{BufferUsage, CpuAccessibleBuffer},
@@ -29,14 +26,17 @@ use winit::{
 
 use vertex::Vertex;
 
-use crate::game_logic::{GameState, Tool};
-use crate::geometry::{windows, Circle, Point};
+use crate::game_logic::GameState;
+use crate::geometry::Circle;
 use crate::graphics_engine::render_pass::SimpleShapes;
 use crate::physics::{DisplayMessage, WithColor};
 use crate::InputMessage;
 
+use self::draw_text::DrawText;
+
 use super::geometry::Polygon;
 
+mod draw_text;
 mod render_pass;
 mod setup;
 mod texture;
@@ -93,6 +93,18 @@ pub fn run(
         texture_array_pipeline,
         texture_pipeline,
     };
+    let window = surface.object().unwrap().downcast_ref::<Window>().unwrap();
+
+    let dimensions = window.inner_size();
+    let mut draw_text = DrawText::new(
+        device.clone(),
+        queue.clone(),
+        swapchain.clone(),
+        &images,
+        &memory_allocator,
+        [dimensions.width as u32, dimensions.height as u32],
+        max_sample_count,
+    );
 
     let mut first_frame = AutoCommandBufferBuilder::primary(
         &command_buffer_allocator,
@@ -133,7 +145,7 @@ pub fn run(
 
     let game_textures = Textures {
         background: background_set,
-        test_set: test_set,
+        test_set,
     };
 
     let mut viewport = Viewport {
@@ -157,15 +169,13 @@ pub fn run(
             .execute(queue.clone())
             .unwrap()
             .boxed(),
-    );
+        );
 
     let mut is_first_run = true;
     let mut circles_vertices = vec![];
     let mut polygons_vertices = vec![];
 
-    let window = surface.object().unwrap().downcast_ref::<Window>().unwrap();
 
-    let dimensions = window.inner_size();
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
@@ -243,6 +253,17 @@ pub fn run(
                     &memory_allocator,
                     max_sample_count,
                 );
+
+                draw_text = DrawText::new(
+                    device.clone(),
+                    queue.clone(),
+                    swapchain.clone(),
+                    &new_images,
+                    &memory_allocator,
+                    [dimensions.width as u32, dimensions.height as u32],
+                    max_sample_count,
+                );
+
                 recreate_swapchain = false;
             }
 
@@ -297,6 +318,11 @@ pub fn run(
                     polygons: vertex_buffer_polygons,
                     circles: vertex_buffer_circles,
                 },
+                &mut draw_text,
+                image_index as usize,
+                [dimensions.width as usize, dimensions.height as usize],
+                &descriptor_set_allocator,
+                &memory_allocator,
             );
             let command_buffer = builder.build().unwrap();
 
@@ -362,87 +388,85 @@ fn format_data(
                 ],
                 ..Default::default()
             })
-            .chain(
-                if pol.shape.vertices.len() == 4 {
-                    vec![
-                        Vertex {
-                            texture_id: i as u32,
-                            position: [
-                                pol.shape.vertices[3].0 as f32,
-                                -pol.shape.vertices[3].1 as f32,
-                            ],
-                            color: pol.color,
-                            tex_position: [0.0, 0.0],
-                            ..Default::default()
-                        },
-                        Vertex {
-                            texture_id: i as u32,
-                            position: [
-                                pol.shape.vertices[0].0 as f32,
-                                -pol.shape.vertices[0].1 as f32,
-                            ],
-                            color: pol.color,
-                            tex_position: [0.0, 1.0],
-                            ..Default::default()
-                        },
-                        Vertex {
-                            texture_id: i as u32,
-                            position: [
-                                pol.shape.vertices[2].0 as f32,
-                                -pol.shape.vertices[2].1 as f32,
-                            ],
-                            color: pol.color,
-                            tex_position: [1.0, 0.0],
-                            ..Default::default()
-                        },
-                        Vertex {
-                            texture_id: i as u32,
-                            position: [
-                                pol.shape.vertices[1].0 as f32,
-                                -pol.shape.vertices[1].1 as f32,
-                            ],
-                            color: pol.color,
-                            tex_position: [0.0, 0.0],
-                            ..Default::default()
-                        },
-                    ]
-                    .into_iter()
-                } else {
-                    vec![
-                        Vertex {
-                            texture_id: i as u32,
-                            position: [
-                                pol.shape.vertices[2].0 as f32,
-                                -pol.shape.vertices[2].1 as f32,
-                            ],
-                            color: pol.color,
-                            tex_position: [0.0, 0.0],
-                            ..Default::default()
-                        },
-                        Vertex {
-                            texture_id: i as u32,
-                            position: [
-                                pol.shape.vertices[0].0 as f32,
-                                -pol.shape.vertices[0].1 as f32,
-                            ],
-                            color: pol.color,
-                            tex_position: [1.0, 0.0],
-                            ..Default::default()
-                        },
-                        Vertex {
-                            texture_id: i as u32,
-                            position: [
-                                pol.shape.vertices[1].0 as f32,
-                                -pol.shape.vertices[1].1 as f32,
-                            ],
-                            color: pol.color,
-                            tex_position: [1.0, 0.0],
-                            ..Default::default()
-                        },
-                    ]
-                    .into_iter()
-                },
-            )
+            .chain(if pol.shape.vertices.len() == 4 {
+                vec![
+                    Vertex {
+                        texture_id: i as u32,
+                        position: [
+                            pol.shape.vertices[3].0 as f32,
+                            -pol.shape.vertices[3].1 as f32,
+                        ],
+                        color: pol.color,
+                        tex_position: [0.0, 0.0],
+                        ..Default::default()
+                    },
+                    Vertex {
+                        texture_id: i as u32,
+                        position: [
+                            pol.shape.vertices[0].0 as f32,
+                            -pol.shape.vertices[0].1 as f32,
+                        ],
+                        color: pol.color,
+                        tex_position: [0.0, 1.0],
+                        ..Default::default()
+                    },
+                    Vertex {
+                        texture_id: i as u32,
+                        position: [
+                            pol.shape.vertices[2].0 as f32,
+                            -pol.shape.vertices[2].1 as f32,
+                        ],
+                        color: pol.color,
+                        tex_position: [1.0, 0.0],
+                        ..Default::default()
+                    },
+                    Vertex {
+                        texture_id: i as u32,
+                        position: [
+                            pol.shape.vertices[1].0 as f32,
+                            -pol.shape.vertices[1].1 as f32,
+                        ],
+                        color: pol.color,
+                        tex_position: [0.0, 0.0],
+                        ..Default::default()
+                    },
+                ]
+                .into_iter()
+            } else {
+                vec![
+                    Vertex {
+                        texture_id: i as u32,
+                        position: [
+                            pol.shape.vertices[2].0 as f32,
+                            -pol.shape.vertices[2].1 as f32,
+                        ],
+                        color: pol.color,
+                        tex_position: [0.0, 0.0],
+                        ..Default::default()
+                    },
+                    Vertex {
+                        texture_id: i as u32,
+                        position: [
+                            pol.shape.vertices[0].0 as f32,
+                            -pol.shape.vertices[0].1 as f32,
+                        ],
+                        color: pol.color,
+                        tex_position: [1.0, 0.0],
+                        ..Default::default()
+                    },
+                    Vertex {
+                        texture_id: i as u32,
+                        position: [
+                            pol.shape.vertices[1].0 as f32,
+                            -pol.shape.vertices[1].1 as f32,
+                        ],
+                        color: pol.color,
+                        tex_position: [1.0, 0.0],
+                        ..Default::default()
+                    },
+                ]
+                .into_iter()
+            })
             .chain(std::iter::once(Vertex {
                 texture_id: i as u32,
                 position: [
