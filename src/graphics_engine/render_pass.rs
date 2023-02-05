@@ -208,6 +208,16 @@ impl SimpleShapes {
             )
             .draw(buffers.circles.len() as u32, 1, 0, 0)
             .unwrap()
+            .bind_pipeline_graphics(pipelines.texture_array_pipeline.clone())
+            .bind_vertex_buffers(0, buffers.level_status.clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Graphics,
+                pipelines.texture_array_pipeline.layout().clone(),
+                0,
+                textures.level.0.clone(),
+            )
+            .draw(buffers.level_status.len() as u32, 1, 0, 0)
+            .unwrap()
             .end_render_pass()
             .unwrap();
             // .draw_text(&mut draw_text, image_num, dimensions, descriptor_set_allocator, memory_allocator);
