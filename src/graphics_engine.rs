@@ -557,36 +557,38 @@ fn format_data(
         .flat_map(|circle| {
             let color = circle.color;
             let center = [circle.shape.center.0 as f32, -circle.shape.center.1 as f32];
-            let radius = circle.shape.radius as f32;
+            let radius = circle.shape.radius;
+            let center_y = -circle.shape.center.1;
+            let center_x = circle.shape.center.0;
             let positions = [
+
                 [
-                    circle.shape.center.0 as f32,
-                    (-(circle.shape.center.1 - circle.shape.radius * 2.0_f64.sqrt())) as f32,
+                    (center_x - radius) as f32,
+                    (center_y + radius) as f32,
                 ],
                 [
-                    (circle.shape.center.0 - circle.shape.radius * 2.0_f64.sqrt()) as f32,
-                    -circle.shape.center.1 as f32,
-                ],
-                // [
-                //     circle.shape.center.0 as f32,
-                //     (-(circle.shape.center.1 + circle.shape.radius * 2.0_f64.sqrt())) as f32,
-                // ],
-                [
-                    circle.shape.center.0 as f32,
-                    (-(circle.shape.center.1 + circle.shape.radius * 2.0_f64.sqrt())) as f32,
+                    (center_x - radius) as f32,
+                    (center_y - radius) as f32,
                 ],
                 [
-                    (circle.shape.center.0 + circle.shape.radius * 2.0_f64.sqrt()) as f32,
-                    -circle.shape.center.1 as f32,
+                    (center_x + radius) as f32,
+                    (center_y + radius) as f32,
                 ],
-                // [
-                //     circle.shape.center.0 as f32,
-                //     (-(circle.shape.center.1 - circle.shape.radius * 2.0_f64.sqrt())) as f32,
-                // ],
+                [
+                    (center_x + radius) as f32,
+                    (center_y - radius) as f32,
+                ],
+
+
+
+
+
+
             ];
-            create_circle_vertices(positions, radius, center, color)
+            create_circle_vertices(positions, radius as f32, center, color)
         })
         .collect::<Vec<_>>();
+        dbg!(circles_vertexes.clone());
 
     (polygons_vertexes, circles_vertexes)
 }
@@ -597,7 +599,7 @@ fn create_circle_vertices(
     center: [f32; 2],
     color: [f32; 3],
 ) -> Vec<Vertex> {
-    let tex_coords = [[0.0, 1.0], [0.0, 0.0],[1.0, 0.0],[1.0, 1.0],];
+    let tex_coords = [[0.2, 0.8], [0.2, 0.2],[0.8, 0.8],[0.8, 0.2],];
     positions
         .into_iter()
         .enumerate()

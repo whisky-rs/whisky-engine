@@ -198,14 +198,14 @@ impl SimpleShapes {
             .bind_vertex_buffers(0, buffers.polygons.clone())
             .draw(buffers.polygons.len() as u32, 1, 0, 0)
             .unwrap()
-            .bind_pipeline_graphics(pipelines.polygon_pipeline.clone())
+            .bind_pipeline_graphics(pipelines.texture_pipeline.clone())
             .bind_vertex_buffers(0, buffers.circles.clone())
-            // .bind_descriptor_sets(
-            //     PipelineBindPoint::Graphics,
-            //     pipelines.texture_pipeline.layout().clone(),
-            //     0,
-            //     textures.ball.0.clone(),
-            // )
+            .bind_descriptor_sets(
+                PipelineBindPoint::Graphics,
+                pipelines.texture_pipeline.layout().clone(),
+                0,
+                textures.ball.0.clone(),
+            )
             .draw(buffers.circles.len() as u32, 1, 0, 0)
             .unwrap()
             .end_render_pass()
