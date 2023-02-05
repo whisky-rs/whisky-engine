@@ -155,6 +155,9 @@ pub struct Laser {
     pub point: Point,
     pub direction: Vector,
     pub change: f64,
+    pub range: f64,
+    pub inital_direction: Vector,
+    pub is_out: bool,
 }
 
 #[cfg(test)]

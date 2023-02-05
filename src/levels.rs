@@ -1,8 +1,7 @@
 use std::{fs, io, path::Path};
 
 use serde::{Deserialize, Serialize};
-
-use crate::geometry::{Circle, Laser, Point};
+use crate::{geometry::{Circle, Laser, Point}};
 
 fn initialize_false() -> bool {
     false
