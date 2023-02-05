@@ -336,7 +336,7 @@ impl Engine {
     pub fn run_iteration(&mut self) {
         let time_step = self.last_iteration.elapsed();
         let mut is_reset_level = false;
-        let is_reset_jumps = false;
+        let mut is_reset_jumps = false;
         self.last_iteration = Instant::now();
 
         // move all shapes, removing ones out of bounds
@@ -434,15 +434,14 @@ impl Engine {
                         }
                     }
 
-                    if i == 0 && other.is_deadly {
-                        if let CollisionType::Weak | CollisionType::Strong = collision {
+                    if let (0, CollisionType::Weak | CollisionType::Strong) = (i, collision) {
+                        if other.is_deadly {
                             is_reset_level = true;
+                        } else {
+                            is_reset_jumps = true;
                         }
                     }
-
-                    // if i == 0 && !other.is_deadly {
                     //     if let CollisionType::Weak | CollisionType::Strong = collision {
-                    //         is_reset_jumps = true;
                     //         self.next_level = Some("level3.ron".to_string());
                     //         // println!("=========== OOF ==========");
                     //         // process::exit(0);
@@ -619,13 +618,11 @@ impl Engine {
     }
 
     pub fn jump(&mut self) {
-        println!("{}", self.jumps_count);
         if self.jumps_count != 0 {
             let main_ball_mut = self.main_ball.upgrade().unwrap();
             main_ball_mut.borrow_mut().collision_data_mut().velocity +=
                 Point(0.0, 1.0).rotate(-self.angle as f64);
             self.jumps_count -= 1;
-            println!("{}", self.jumps_count);
         }
     }
 
