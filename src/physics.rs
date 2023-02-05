@@ -13,7 +13,7 @@ use rand::Rng;
 
 use self::{
     binding::{Binding, Unbound},
-    shape::{Circle, Collidable, CollisionType, Polygon},
+    shape::{Circle, Collidable, CollisionType, Polygon, Bounded},
 };
 use crate::{
     geometry::{self, Laser, Point, Vector},
@@ -199,6 +199,7 @@ pub struct Engine {
     main_ball: Weak<RefCell<Circle>>,
     pub angle: f32,
     lasers: Vec<Laser>,
+    jumps_count: usize,
 }
 
 impl Engine {
@@ -236,6 +237,7 @@ impl Engine {
             main_ball: Weak::new(),
             angle: 0.0,
             lasers,
+            jumps_count: 2,
         };
 
         let main_ball_weak = engine.add_entity(
@@ -333,6 +335,8 @@ impl Engine {
 
     pub fn run_iteration(&mut self) {
         let time_step = self.last_iteration.elapsed();
+        let mut is_reset_level = false;
+        let mut is_reset_jumps = false;
         self.last_iteration = Instant::now();
 
         // move all shapes, removing ones out of bounds
@@ -357,6 +361,11 @@ impl Engine {
             let delta = laser.direction * 0.1;
             let mut end_point = start_point + delta;
             loop {
+                let main_ball_rc = self.main_ball.upgrade().unwrap();
+                if (main_ball_rc.borrow().includes(end_point)) {
+                    is_reset_level = true;
+                    break;
+                }
                 let result = self
                     .entities
                     .iter()
@@ -384,24 +393,16 @@ impl Engine {
             let data = ball.collision_data_mut();
 
             if data.centroid.0.abs() > 5.0 || data.centroid.1 < -5.0 {
-                data.centroid = self.main_ball_starting_position;
-                data.angular_velocity = 0.0;
-                data.velocity = Vector::ZERO;
+                is_reset_level = true;
             }
 
-            self.flags
-                .retain(|flag| compute::collision(&*ball, flag).is_none());
-
-            // if self.flags.is_empty() {
-            //     println!("=========== YOU WIN! ==========");
-            //     process::exit(0);
-            // }
         }
 
         // iterate over all pairs of shapes
         {
             let mut i = 0;
             let mut to_remove = vec![];
+
             while let [this, rest @ ..] = &mut self.entities[i..] {
                 let mut shape = this.shape.borrow_mut();
 
@@ -436,8 +437,13 @@ impl Engine {
 
                     if i == 0 && other.is_deadly {
                         if let CollisionType::Weak | CollisionType::Strong = collision {
-                            println!("=========== OOF ==========");
-                            process::exit(0);
+                            is_reset_level = true;
+                        }
+                    }
+
+                    if i == 0 && !other.is_deadly {
+                        if let CollisionType::Weak | CollisionType::Strong = collision {
+                            is_reset_jumps = true;
                         }
                     }
                     // }
@@ -455,12 +461,20 @@ impl Engine {
             to_remove.dedup();
             to_remove.sort();
             for i in to_remove.into_iter().rev() {
-                self.entities.remove(i);
+                let _ = &self.entities.remove(i);
             }
         }
 
         if self.channel.is_empty() {
             self.prune_and_send_shapes(laser_polygons);
+        }
+
+        if is_reset_level {
+            self.reset_level();
+        }
+
+        if is_reset_jumps {
+            self.reset_jumps();
         }
     }
 
@@ -600,9 +614,27 @@ impl Engine {
     }
 
     pub fn jump(&mut self) {
-        let main_ball_mut = self.main_ball.upgrade().unwrap();
-        main_ball_mut.borrow_mut().collision_data_mut().velocity +=
-            Point(0.0, 1.0).rotate(-self.angle as f64);
+        println!("{}", self.jumps_count);
+        if self.jumps_count != 0 {
+            let main_ball_mut = self.main_ball.upgrade().unwrap();
+            main_ball_mut.borrow_mut().collision_data_mut().velocity +=
+                Point(0.0, 1.0).rotate(-self.angle as f64);
+            self.jumps_count -= 1;
+            println!("{}", self.jumps_count);
+        }
+    }
+
+    pub fn reset_level(&self) {
+        let mut ball = self.entities[0].shape.borrow_mut();
+        let data = ball.collision_data_mut();
+
+        data.centroid = self.main_ball_starting_position;
+        data.angular_velocity = 0.0;
+        data.velocity = Vector::ZERO;
+    }
+
+    pub fn reset_jumps(&mut self) {
+        self.jumps_count = 2;
     }
 }
 

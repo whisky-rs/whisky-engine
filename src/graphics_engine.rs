@@ -163,6 +163,7 @@ pub fn run(
     let mut polygons_vertices = vec![];
 
     let window = surface.object().unwrap().downcast_ref::<Window>().unwrap();
+    window.set_cursor_visible(false);
 
     let dimensions = window.inner_size();
 
