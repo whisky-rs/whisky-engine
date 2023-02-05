@@ -103,7 +103,7 @@ impl Binding {
                     created_from: (point1, point2),
                 },
                 time_step,
-            )
+            );
         }
     }
 }

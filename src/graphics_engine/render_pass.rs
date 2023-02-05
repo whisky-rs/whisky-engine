@@ -20,10 +20,10 @@ use vulkano::{
     },
     render_pass::{Framebuffer, RenderPass, Subpass},
     shader::ShaderModule,
-    swapchain::Swapchain,
+    swapchain::Swapchain, memory::allocator::{GenericMemoryAllocator, FreeListAllocator, MemoryAllocator}, descriptor_set::allocator::StandardDescriptorSetAllocator,
 };
 
-use super::{vertex::Vertex, Pipelines, Textures, VertexBuffers};
+use super::{vertex::Vertex, Pipelines, Textures, VertexBuffers, draw_text::{DrawText, DrawTextTrait}};
 
 pub struct SimpleShapes {
     pub command_buffer_allocator: StandardCommandBufferAllocator,
@@ -129,7 +129,7 @@ impl SimpleShapes {
         let texture_array_subpass = Subpass::from(render_pass.clone(), 0).unwrap();
 
         //creation of graphics pipelines
-        let pipeline = SimpleShapes::create_pipeline(device, subpass, vs, fs);
+        let pipeline = SimpleShapes::create_pipeline_trg_strip(device, subpass, vs, fs);
 
         let circle_pipeline =
             SimpleShapes::create_pipeline(device, circle_subpass, circle_vs, circle_fs);
@@ -143,6 +143,7 @@ impl SimpleShapes {
             text_array_vs,
             text_array_fs,
         );
+
 
         SimpleShapes {
             command_buffer_allocator,
@@ -163,6 +164,10 @@ impl SimpleShapes {
         pipelines: &Pipelines,
         buffers: VertexBuffers,
     ) {
+
+
+
+
         builder
             .begin_render_pass(
                 RenderPassBeginInfo {
@@ -173,56 +178,49 @@ impl SimpleShapes {
             )
             .unwrap()
             .set_viewport(0, [viewport.clone()])
-            .bind_pipeline_graphics(pipelines.texture_pipeline.clone())
+            .bind_pipeline_graphics(pipelines.texture_array_pipeline.clone())
             .bind_descriptor_sets(
                 PipelineBindPoint::Graphics,
-                pipelines.texture_pipeline.layout().clone(),
+                pipelines.texture_array_pipeline.layout().clone(),
                 0,
                 textures.background.0.clone(),
             )
             .bind_vertex_buffers(0, buffers.background.clone())
             .draw(buffers.background.len() as u32, 1, 0, 0)
             .unwrap()
-            .bind_pipeline_graphics(pipelines.texture_pipeline.clone())
-            .bind_descriptor_sets(
-                PipelineBindPoint::Graphics,
-                pipelines.texture_pipeline.layout().clone(),
-                0,
-                textures.flag.0.clone(),
-            )
-            .bind_vertex_buffers(0, buffers.flags.clone())
-            .draw(buffers.flags.len() as u32, 1, 0, 0)
-            .unwrap()
             .bind_pipeline_graphics(pipelines.polygon_pipeline.clone())
+            // .bind_descriptor_sets(
+            //     PipelineBindPoint::Graphics,
+            //     pipelines.texture_pipeline.layout().clone(),
+            //     0,
+            //     textures.test_set.0.clone(),
+            // )
             .bind_vertex_buffers(0, buffers.polygons.clone())
             .draw(buffers.polygons.len() as u32, 1, 0, 0)
             .unwrap()
-            .bind_pipeline_graphics(pipelines.circle_pipeline.clone())
-            .bind_vertex_buffers(0, buffers.circles.clone())
-            .draw(buffers.circles.len() as u32, 1, 0, 0)
-            .unwrap()
             .bind_pipeline_graphics(pipelines.texture_pipeline.clone())
+            .bind_vertex_buffers(0, buffers.circles.clone())
             .bind_descriptor_sets(
                 PipelineBindPoint::Graphics,
                 pipelines.texture_pipeline.layout().clone(),
                 0,
-                textures.draw_line.0.clone(),
+                textures.ball.0.clone(),
             )
-            .bind_vertex_buffers(0, buffers.line.clone())
-            .draw(buffers.line.len() as u32, 1, 0, 0)
+            .draw(buffers.circles.len() as u32, 1, 0, 0)
             .unwrap()
             .bind_pipeline_graphics(pipelines.texture_array_pipeline.clone())
+            .bind_vertex_buffers(0, buffers.level_status.clone())
             .bind_descriptor_sets(
                 PipelineBindPoint::Graphics,
                 pipelines.texture_array_pipeline.layout().clone(),
                 0,
-                textures.tool.0.clone(),
+                textures.level.0.clone(),
             )
-            .bind_vertex_buffers(0, buffers.tool.clone())
-            .draw(buffers.tool.len() as u32, 1, 0, 0)
+            .draw(buffers.level_status.len() as u32, 1, 0, 0)
             .unwrap()
             .end_render_pass()
             .unwrap();
+            // .draw_text(&mut draw_text, image_num, dimensions, descriptor_set_allocator, memory_allocator);
     }
 }
 
@@ -289,3 +287,4 @@ mod tex_array_fs {
         path: "shaders/fragment/texture_array_frag.glsl"
     }
 }
+

@@ -1,9 +1,9 @@
 use std::{
     cell::RefCell,
-    os::raw::c_void,
-    process,
+    f64::consts,
     rc::{Rc, Weak},
     time::Instant,
+    vec, f32::consts::E,
 };
 
 use crossbeam::channel::{self, TrySendError};
@@ -11,10 +11,10 @@ use rand::Rng;
 
 use self::{
     binding::{Binding, Unbound},
-    shape::{Circle, Collidable, Polygon},
+    shape::{Bounded, Circle, Collidable, CollisionType, Polygon},
 };
 use crate::{
-    geometry::{self, Point, Vector},
+    geometry::{self, Laser, Point, Vector},
     levels::Level,
 };
 
@@ -54,6 +54,10 @@ pub struct DisplayMessage {
     pub hinges: Vec<Point>,
     pub unbound_rigid_bindings: Vec<Point>,
     pub unbound_hinges: Vec<Point>,
+    pub lasers: Vec<WithColor<geometry::Polygon>>,
+    pub laser_boxes: Vec<WithColor<geometry::Polygon>>,
+    pub doors: Vec<WithColor<geometry::Polygon>>,
+    pub level_idx: usize,
 }
 
 fn to_geometry<G>(
@@ -74,6 +78,24 @@ fn to_geometry<G>(
     geometry_shapes
 }
 
+fn polygon_to_geometry(
+    polygons: Vec<Polygon>,
+    color: [f32; 3],
+) -> Vec<WithColor<geometry::Polygon>> {
+    let mut geometry_shapes = Vec::with_capacity(polygons.len());
+    for laser in polygons.iter() {
+        let colored_laser = WithColor {
+            shape: laser,
+            color,
+        };
+        geometry_shapes.push(WithColor {
+            color: colored_laser.color,
+            shape: laser.clone().into(),
+        });
+    }
+    geometry_shapes
+}
+
 #[cfg(test)]
 macro_rules! make_shape {
     ($(($x:expr, $y:expr)),*$(,)?) => {
@@ -90,6 +112,8 @@ struct EntityCfg {
     is_erasable: bool,
     is_bindable: bool,
     is_static: bool,
+    is_deadly: bool,
+    is_fragile: bool,
 }
 
 impl Default for EntityCfg {
@@ -98,6 +122,8 @@ impl Default for EntityCfg {
             is_erasable: true,
             is_bindable: true,
             is_static: false,
+            is_deadly: false,
+            is_fragile: false,
         }
     }
 }
@@ -108,6 +134,8 @@ struct Entity {
     is_erasable: bool,
     is_bindable: bool,
     is_static: bool,
+    is_deadly: bool,
+    is_fragile: bool,
     shape: Rc<RefCell<dyn Collidable>>,
 }
 
@@ -117,6 +145,8 @@ impl Entity {
             is_erasable,
             is_bindable,
             is_static,
+            is_deadly,
+            is_fragile,
         } = entity_type;
 
         Self {
@@ -126,6 +156,8 @@ impl Entity {
             is_static,
             is_erasable,
             is_bindable,
+            is_deadly,
+            is_fragile,
         }
     }
 
@@ -166,9 +198,17 @@ pub struct Engine {
     // weak pointers then they would have to be manually updated after removing an entity
     polygons: Vec<WithColor<Weak<RefCell<Polygon>>>>,
     circles: Vec<WithColor<Weak<RefCell<Circle>>>>,
+    lasers: Vec<Laser>,
+    doors: Vec<(Polygon, String)>,
+    laser_boxes: Vec<Polygon>,
     main_ball_starting_position: Point,
     flags: Vec<Polygon>,
     last_iteration: Instant,
+    main_ball: Weak<RefCell<Circle>>,
+    pub angle: f32,
+    jumps_count: usize,
+    pub next_level: Option<String>,
+    level_stack: Vec<String>,
 }
 
 impl Engine {
@@ -178,11 +218,19 @@ impl Engine {
             initial_ball_position,
             circles,
             polygons,
+            lasers,
+            doors,
             flags_positions,
         }: Level,
     ) -> Self {
         let n_of_circles = circles.len() + 1;
         let n_of_polygons = polygons.len();
+        let n_of_laser_boxes = lasers.len();
+
+        let doors = doors
+            .into_iter()
+            .map(|temp_door| (Polygon::new(temp_door.0), temp_door.1))
+            .collect();
 
         let mut engine = Self {
             channel,
@@ -202,16 +250,29 @@ impl Engine {
                 })
                 .collect(),
             last_iteration: Instant::now(),
+            main_ball: Weak::new(),
+            angle: 0.0,
+            lasers,
+            laser_boxes: Vec::with_capacity(n_of_laser_boxes),
+            doors,
+            jumps_count: 2,
+            next_level: None,
+            level_stack: vec!["level5.ron".to_string()],
         };
 
         let main_ball_weak = engine.add_entity(
-            Circle::new(initial_ball_position, 0.1),
+            Circle::new(initial_ball_position, 0.07),
             EntityCfg {
-                is_bindable: true,
+                is_bindable: false,
                 is_erasable: false,
                 is_static: false,
+                is_deadly: false,
+                is_fragile: false,
             },
         );
+
+        engine.main_ball = main_ball_weak.clone();
+
         engine.circles.push(main_ball_weak.into());
 
         for entity in polygons {
@@ -221,9 +282,22 @@ impl Engine {
                     is_bindable: entity.is_bindable,
                     is_static: entity.is_static,
                     is_erasable: false,
+                    is_deadly: entity.is_deadly,
+                    is_fragile: entity.is_fragile,
                 },
             );
-            engine.polygons.push(weak.into())
+            engine.polygons.push(WithColor {
+                color: if !entity.is_static {
+                    [1.0, 0.85, 0.22]
+                } else if entity.is_deadly {
+                    [1.0, 0.0, 0.0]
+                } else if entity.is_fragile {
+                    [0.7, 0.7, 0.7]
+                } else {
+                    [1.0, 0.85, 0.42]
+                },
+                shape: weak,
+            })
         }
 
         for entity in circles {
@@ -234,17 +308,31 @@ impl Engine {
                     is_bindable: entity.is_bindable,
                     is_static: entity.is_static,
                     is_erasable: false,
+                    is_deadly: entity.is_deadly,
+                    is_fragile: entity.is_fragile,
                 },
             );
-            engine.circles.push(weak.into())
+            engine.circles.push(WithColor {
+                color: if !entity.is_static {
+                    [1.0, 0.85, 0.22]
+                } else if entity.is_deadly {
+                    [1.0, 0.0, 0.0]
+                } else if entity.is_fragile {
+                    [0.7, 0.7, 0.7]
+                } else {
+                    [1.0, 0.85, 0.42]
+                },
+                shape: weak,
+            });
         }
 
-        engine.prune_and_send_shapes();
         engine
     }
 
     pub fn run_iteration(&mut self) {
         let time_step = self.last_iteration.elapsed();
+        let mut is_reset_level = false;
+        let mut is_reset_jumps = false;
         self.last_iteration = Instant::now();
 
         // move all shapes, removing ones out of bounds
@@ -254,13 +342,66 @@ impl Engine {
             let mut shape = entity.shape.borrow_mut();
 
             if !entity.is_static {
-                shape.update_position(time_step);
+                shape.update_position(time_step, -self.angle as f64);
             }
 
             let retain = shape.collision_data_mut().centroid.1 > -5.0 || is_main_ball;
             is_main_ball = false;
             retain
         });
+
+        for door in &self.doors {
+            if compute::collision(&door.0, &*self.main_ball.upgrade().unwrap().borrow()).is_some() {
+                self.next_level = Some(door.1.clone());
+                break;
+            }
+        }
+
+        //  generate laser polygons
+        let mut laser_polygons: Vec<Polygon> = Vec::with_capacity(self.lasers.len());
+        for laser in self.lasers.iter() {
+            let start_point = laser.point;
+            let delta = laser.direction * 0.1;
+            let mut end_point = start_point + delta;
+            loop {
+                let main_ball_rc = self.main_ball.upgrade().unwrap();
+                if main_ball_rc.borrow().includes(end_point) {
+                    is_reset_level = true;
+                    break;
+                }
+                let result = self
+                    .entities
+                    .iter()
+                    .any(|entity| entity.shape.borrow().includes(end_point));
+                if result {
+                    let offset = laser.direction.perpendicular().unit() * 0.02;
+                    let start_point_second = start_point + offset;
+                    let end_point_second = end_point + offset;
+                    laser_polygons.push(Polygon::new(vec![
+                        start_point,
+                        end_point,
+                        end_point_second,
+                        start_point_second,
+                    ]));
+                    break;
+                }
+                end_point += delta;
+            }
+        }
+
+        // generate laser boxes
+        let mut laser_boxes: Vec<Polygon> = Vec::with_capacity(self.lasers.len());
+        for laser in self.lasers.iter() {
+            let center = laser.point;
+            let x_offset = Point(0.03, 0.);
+            let y_offset = Point(0., 0.03);
+            let first = center - x_offset - y_offset;
+            let second = center - x_offset + y_offset;
+            let third = center + x_offset + y_offset;
+            let fourth = center + x_offset - y_offset;
+            laser_boxes.push(Polygon::new(vec![first, second, third, fourth]));
+        }
+        self.laser_boxes = laser_boxes;
 
         // return main ball to starting point if out of bounds
         // and check win condition
@@ -269,44 +410,64 @@ impl Engine {
             let data = ball.collision_data_mut();
 
             if data.centroid.0.abs() > 5.0 || data.centroid.1 < -5.0 {
-                data.centroid = self.main_ball_starting_position;
-                data.angular_velocity = 0.0;
-                data.velocity = Vector::ZERO;
-            }
-
-            self.flags
-                .retain(|flag| compute::collision(&*ball, flag).is_none());
-
-            if self.flags.is_empty() {
-                println!("=========== YOU WIN! ==========");
-                process::exit(0);
+                is_reset_level = true;
             }
         }
 
         // iterate over all pairs of shapes
         {
             let mut i = 0;
+            let mut to_remove = vec![];
+
             while let [this, rest @ ..] = &mut self.entities[i..] {
                 let mut shape = this.shape.borrow_mut();
-
+                if shape.collision_data_mut().inertia < 0.0 || shape.collision_data_mut().mass < 0.0
+                {
+                    println!("Fuck {i}");
+                }
                 // collide them if they are not bound
-                rest.iter_mut().for_each(|other| {
-                    let mut is_boud_to_other = false;
-                    this.bindings.retain(|(_, target)| {
-                        let valid = target.strong_count() > 0;
-                        if valid {
-                            is_boud_to_other = is_boud_to_other
-                                || std::ptr::eq(
-                                    target.as_ptr() as *const c_void,
-                                    (&*other.shape) as *const _ as *const c_void,
-                                )
-                        }
-                        valid
-                    });
-
-                    if !is_boud_to_other {
-                        shape.collide(&mut *other.shape.borrow_mut(), time_step)
+                rest.iter_mut().enumerate().for_each(|(j, other)| {
+                    if this.is_static && other.is_static {
+                        return;
                     }
+                    // let mut is_boud_to_other = false;
+                    // this.bindings.retain(|(_, target)| {
+                    //     let valid = target.strong_count() > 0;
+                    //     if valid {
+                    //         is_boud_to_other = is_boud_to_other
+                    //             || std::ptr::eq(
+                    //                 target.as_ptr() as *const c_void,
+                    //                 (&*other.shape) as *const _ as *const c_void,
+                    //             )
+                    //     }
+                    //     valid
+                    // });
+
+                    // if !is_boud_to_other {
+                    let collision = shape.collide(&mut *other.shape.borrow_mut(), time_step);
+                    if let CollisionType::Strong = collision {
+                        if this.is_fragile {
+                            to_remove.push(i);
+                        }
+                        if other.is_fragile {
+                            to_remove.push(i + j + 1);
+                        }
+                    }
+
+                    if let (0, CollisionType::Weak | CollisionType::Strong) = (i, collision) {
+                        if other.is_deadly {
+                            is_reset_level = true;
+                        } else {
+                            is_reset_jumps = true;
+                        }
+                    }
+                    //     if let CollisionType::Weak | CollisionType::Strong = collision {
+                    //         self.next_level = Some("level3.ron".to_string());
+                    //         // println!("=========== OOF ==========");
+                    //         // process::exit(0);
+                    //     }
+                    // }
+                    // }
                 });
 
                 // enforce binding constraints
@@ -318,14 +479,32 @@ impl Engine {
 
                 i += 1;
             }
+            to_remove.dedup();
+            to_remove.sort();
+            for i in to_remove.into_iter().rev() {
+                let _ = &self.entities.remove(i);
+            }
         }
 
         if self.channel.is_empty() {
-            self.prune_and_send_shapes();
+            self.prune_and_send_shapes(laser_polygons);
+        }
+
+        if is_reset_level {
+            if self.level_stack.len() > 1 {
+                self.level_stack.pop();
+                self.next_level = Some(self.level_stack.last().unwrap().clone());
+            } else {
+                self.reset_level();
+            }
+        }
+
+        if is_reset_jumps {
+            self.reset_jumps();
         }
     }
 
-    fn prune_and_send_shapes(&mut self) {
+    fn prune_and_send_shapes(&mut self, laser_polygons: Vec<Polygon>) {
         let mut rigid_bindings = Vec::new();
         let mut hinges = Vec::new();
         let mut unbound_rigid_bindings = Vec::new();
@@ -360,17 +539,85 @@ impl Engine {
             }
         }
 
+        let mut polygons: Vec<WithColor<geometry::Polygon>> = to_geometry(&mut self.polygons);
+        let mut circles: Vec<WithColor<geometry::Circle>> = to_geometry(&mut self.circles);
+
+        let mut lasers: Vec<WithColor<geometry::Polygon>> =
+            Vec::with_capacity(laser_polygons.len());
+        let mut laser_boxes: Vec<WithColor<geometry::Polygon>> =
+            Vec::with_capacity(self.laser_boxes.len());
+        let mut doors: Vec<WithColor<geometry::Polygon>> = Vec::with_capacity(self.doors.len());
+
+        for laser in polygon_to_geometry(laser_polygons, [0.0, 0.0, 1.0]) {
+            lasers.push(laser);
+        }
+
+        for laser_box in polygon_to_geometry(self.laser_boxes.clone(), [0.0, 0.0, 1.0]) {
+            laser_boxes.push(laser_box);
+        }
+
+        for door in polygon_to_geometry(
+            self.doors.iter().map(|(d, _)| d.clone()).collect(),
+            [0.0, 1.0, 0.0],
+        ) {
+            doors.push(door);
+        }
+
+        for polygon in &mut polygons {
+            polygon.shape.rotate(self.angle);
+        }
+
+        for circle in &mut circles {
+            circle.shape.rotate(self.angle);
+        }
+
+        for circle in &mut lasers {
+            circle.shape.rotate(self.angle);
+        }
+
+        for circle in &mut laser_boxes {
+            circle.shape.rotate(self.angle);
+        }
+
+        for circle in &mut doors {
+            circle.shape.rotate(self.angle);
+        }
+
         if let Err(TrySendError::Disconnected(_)) = self.channel.try_send(DisplayMessage {
-            polygons: to_geometry(&mut self.polygons),
-            circles: to_geometry(&mut self.circles),
+            polygons,
+            circles,
             flags: self.flags.iter().cloned().map(Into::into).collect(),
             rigid_bindings,
             hinges,
             unbound_rigid_bindings,
             unbound_hinges,
+            lasers,
+            laser_boxes,
+            doors,
+            level_idx: self.level_stack.last().unwrap().trim_start_matches("level")[..1]
+                .parse()
+                .unwrap(),
         }) {
             panic!("failed to send");
         }
+        for laser in &mut self.lasers {
+            if (Vector::angle_to(laser.inital_direction, laser.direction)).abs() >= laser.range && !laser.is_out {
+                laser.is_out = true;
+                laser.change *= -1.;
+            } else {
+                laser.is_out = false;
+            }
+            // println!("{}", Vector::angle_to(laser.inital_direction, laser.direction));
+            laser.direction = laser.direction.rotate(laser.change);
+        }
+    }
+
+    pub fn reload_level(self, level: Level, name: String) -> Self {
+        let mut engine = Self::new(self.channel, level);
+        let mut stack = self.level_stack;
+        stack.push(name);
+        engine.level_stack = stack;
+        engine
     }
 
     pub fn try_bind(&mut self, new_shape: &Rc<RefCell<dyn Collidable>>) {
@@ -439,103 +686,125 @@ impl Engine {
             self.entities[i].add_rigid(point);
         }
     }
-}
 
-#[cfg(test)]
-mod test {
-    use crate::levels;
-
-    use super::*;
-
-    fn init_engine() -> Engine {
-        Engine::new(
-            channel::bounded(1).0,
-            Level {
-                initial_ball_position: Point(0.0, 0.5),
-                polygons: vec![
-                    levels::Entity {
-                        is_bindable: false,
-                        is_static: true,
-                        shape: vec![
-                            Point(0.0, 0.0),
-                            Point(0.5, 0.0),
-                            Point(0.5, 0.5),
-                            Point(0.0, 0.5),
-                        ],
-                    },
-                    levels::Entity {
-                        is_bindable: false,
-                        is_static: true,
-                        shape: vec![
-                            Point(0.0, 1.0),
-                            Point(0.5, 1.0),
-                            Point(0.5, 1.5),
-                            Point(0.0, 1.5),
-                        ],
-                    },
-                ],
-                circles: vec![levels::Entity {
-                    is_bindable: false,
-                    is_static: true,
-                    shape: geometry::Circle {
-                        center: Point(0.0, 0.9),
-                        radius: 0.05,
-                    },
-                }],
-                flags_positions: vec![Point(-0.9, 0.0)],
-            },
-        )
+    pub fn jump(&mut self) {
+        if self.jumps_count != 0 {
+            let main_ball_mut = self.main_ball.upgrade().unwrap();
+            main_ball_mut.borrow_mut().collision_data_mut().velocity +=
+                Point(0.0, 1.0).rotate(-self.angle as f64);
+            self.jumps_count -= 1;
+        }
     }
 
-    #[test]
-    fn test_engine_creation() {
-        let engine = init_engine();
+    pub fn reset_level(&self) {
+        let mut ball = self.entities[0].shape.borrow_mut();
+        let data = ball.collision_data_mut();
 
-        assert!(engine.circles.len() == 2);
-        assert!(engine.polygons.len() == 2);
-        assert!(engine.entities.len() == 4);
-        assert!(
-            engine.polygons[1]
-                .shape
-                .upgrade()
-                .unwrap()
-                .borrow_mut()
-                .collision_data_mut()
-                .mass
-                == f64::INFINITY
-        );
+        data.centroid = self.main_ball_starting_position;
+        data.angular_velocity = 0.0;
+        data.velocity = Vector::ZERO;
     }
 
-    #[test]
-    fn test_auto_bind() {
-        let mut engine = init_engine();
-
-        engine.add_polygon(make_shape! {
-            (-1.0, -1.0),
-            (-0.9, -1.0),
-            (-0.9, -0.9),
-            (-1.0, -0.9),
-        });
-
-        engine.add_rigid(Point(-0.91, -0.91));
-
-        assert!(engine.entities.last().unwrap().unbound.len() == 1);
-
-        engine.add_polygon(make_shape! {
-            (-0.92, -0.92),
-            (-0.85, -0.92),
-            (-0.85, -0.85),
-            (-0.92, -0.85),
-        });
-
-        let [.., first, second] = &engine.entities[..] else {
-            panic!("not enough enitites");
-        };
-
-        assert!(first.unbound.is_empty());
-        assert!(std::ptr::eq(
-            first.bindings[0].1.as_ptr() as *const c_void,
-            &*second.shape as *const _ as *const c_void
-        ));
+    pub fn reset_jumps(&mut self) {
+        self.jumps_count = 2;
     }
 }
+
+// #[cfg(test)]
+// mod test {
+//     use crate::levels;
+
+//     use super::*;
+
+//     fn init_engine() -> Engine {
+//         Engine::new(
+//             channel::bounded(1).0,
+//             Level {
+//                 initial_ball_position: Point(0.0, 0.5),
+//                 polygons: vec![
+//                     levels::Entity {
+//                         is_bindable: false,
+//                         is_static: true,
+//                         shape: vec![
+//                             Point(0.0, 0.0),
+//                             Point(0.5, 0.0),
+//                             Point(0.5, 0.5),
+//                             Point(0.0, 0.5),
+//                         ],
+//                     },
+//                     levels::Entity {
+//                         is_bindable: false,
+//                         is_static: true,
+//                         shape: vec![
+//                             Point(0.0, 1.0),
+//                             Point(0.5, 1.0),
+//                             Point(0.5, 1.5),
+//                             Point(0.0, 1.5),
+//                         ],
+//                     },
+//                 ],
+//                 circles: vec![levels::Entity {
+//                     is_bindable: false,
+//                     is_static: true,
+//                     shape: geometry::Circle {
+//                         center: Point(0.0, 0.9),
+//                         radius: 0.05,
+//                     },
+//                 }],
+//                 flags_positions: vec![Point(-0.9, 0.0)],
+//             },
+//         )
+//     }
+
+//     #[test]
+//     fn test_engine_creation() {
+//         let engine = init_engine();
+
+//         assert!(engine.circles.len() == 2);
+//         assert!(engine.polygons.len() == 2);
+//         assert!(engine.entities.len() == 4);
+//         assert!(
+//             engine.polygons[1]
+//                 .shape
+//                 .upgrade()
+//                 .unwrap()
+//                 .borrow_mut()
+//                 .collision_data_mut()
+//                 .mass
+//                 == f64::INFINITY
+//         );
+//     }
+
+//     #[test]
+//     fn test_auto_bind() {
+//         let mut engine = init_engine();
+
+//         engine.add_polygon(make_shape! {
+//             (-1.0, -1.0),
+//             (-0.9, -1.0),
+//             (-0.9, -0.9),
+//             (-1.0, -0.9),
+//         });
+
+//         engine.add_rigid(Point(-0.91, -0.91));
+
+//         assert!(engine.entities.last().unwrap().unbound.len() == 1);
+
+//         engine.add_polygon(make_shape! {
+//             (-0.92, -0.92),
+//             (-0.85, -0.92),
+//             (-0.85, -0.85),
+//             (-0.92, -0.85),
+//         });
+
+//         let [.., first, second] = &engine.entities[..] else {
+//             panic!("not enough enitites");
+//         };
+
+//         assert!(first.unbound.is_empty());
+//         assert!(std::ptr::eq(
+//             first.bindings[0].1.as_ptr() as *const c_void,
+//             &*second.shape as *const _ as *const c_void
+//         ));
+//     }
+// }

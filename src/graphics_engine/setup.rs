@@ -108,7 +108,7 @@ pub fn init() -> Init {
         );
         let window = surface.object().unwrap().downcast_ref::<Window>().unwrap();
         window.set_inner_size(PhysicalSize::new(950, 950));
-        window.set_title("Simple ZPR Game");
+        window.set_title("sudo rm -rf /");
 
         Swapchain::new(
             device.clone(),
@@ -118,6 +118,7 @@ pub fn init() -> Init {
                 image_format,
                 image_extent: window.inner_size().into(),
                 image_usage: ImageUsage {
+                    transfer_dst: true,
                     color_attachment: true,
                     sampled: true,
                     ..ImageUsage::empty()

@@ -1,15 +1,17 @@
 use crossbeam::channel;
 use std::sync::Arc;
-use std::time::{Duration};
+use std::time::{Duration, Instant};
 use std::vec;
-use vulkano::image::{AttachmentImage, ImageUsage, SampleCount};
+use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
+use vulkano::format::Format;
+use vulkano::image::{AttachmentImage, ImageDimensions, ImageUsage, ImmutableImage, SampleCount};
 use vulkano::memory::allocator::MemoryAllocator;
-use vulkano::pipeline::GraphicsPipeline;
+use vulkano::pipeline::{GraphicsPipeline, Pipeline};
+use vulkano::sampler::{Filter, Sampler, SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode};
 use vulkano::{
     buffer::{BufferUsage, CpuAccessibleBuffer},
     command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, PrimaryCommandBufferAbstract},
     descriptor_set::allocator::StandardDescriptorSetAllocator,
-    format::Format,
     image::{view::ImageView, ImageAccess, MipmapsCount, SwapchainImage},
     memory::allocator::StandardMemoryAllocator,
     pipeline::graphics::viewport::Viewport,
@@ -20,6 +22,8 @@ use vulkano::{
     },
     sync::{self, FlushError, GpuFuture},
 };
+use winit::dpi::LogicalPosition;
+use winit::event::{ElementState, KeyboardInput};
 use winit::{
     event::{Event, WindowEvent},
     event_loop::ControlFlow,
@@ -28,14 +32,19 @@ use winit::{
 
 use vertex::Vertex;
 
-use crate::game_logic::{Tool, GameState};
+use crate::game_logic::GameState;
 use crate::geometry::{windows, Circle, Point};
+use crate::graphics_engine::monospace::Monospace;
 use crate::graphics_engine::render_pass::SimpleShapes;
 use crate::physics::{DisplayMessage, WithColor};
 use crate::InputMessage;
 
+use self::draw_text::DrawText;
+
 use super::geometry::Polygon;
 
+mod draw_text;
+mod monospace;
 mod render_pass;
 mod setup;
 mod texture;
@@ -43,18 +52,16 @@ mod vertex;
 
 pub struct VertexBuffers {
     background: Arc<CpuAccessibleBuffer<[Vertex]>>,
-    tool: Arc<CpuAccessibleBuffer<[Vertex]>>,
     polygons: Arc<CpuAccessibleBuffer<[Vertex]>>,
     circles: Arc<CpuAccessibleBuffer<[Vertex]>>,
-    line: Arc<CpuAccessibleBuffer<[Vertex]>>,
-    flags: Arc<CpuAccessibleBuffer<[Vertex]>>,
+    level_status: Arc<CpuAccessibleBuffer<[Vertex]>>,
 }
 
 pub struct Textures {
     background: texture::Texture,
-    tool: texture::Texture,
-    draw_line: texture::Texture,
-    flag: texture::Texture,
+    test_set: texture::Texture,
+    ball: texture::Texture,
+    level: texture::Texture,
 }
 
 pub struct Pipelines {
@@ -64,9 +71,12 @@ pub struct Pipelines {
     circle_pipeline: Arc<GraphicsPipeline>,
 }
 
-
 /// Runs simple graphics engine, as argument takes channel providing Polygon data to be drawn
-pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Sender<InputMessage>, mut game_state:  GameState) {
+pub fn run(
+    channel: channel::Receiver<DisplayMessage>,
+    mut messages: channel::Sender<InputMessage>,
+    mut game_state: GameState,
+) {
     let setup::Init {
         device,
         queue,
@@ -94,6 +104,9 @@ pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Se
         texture_array_pipeline,
         texture_pipeline,
     };
+    let window = surface.object().unwrap().downcast_ref::<Window>().unwrap();
+
+    let dimensions = window.inner_size();
 
     let mut first_frame = AutoCommandBufferBuilder::primary(
         &command_buffer_allocator,
@@ -102,52 +115,11 @@ pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Se
     )
     .unwrap();
 
-    let texture_buffer = create_vertex_buffer(
-        &memory_allocator,
-        create_positioned_vertexes(vec![[-1.0, -1.0], [-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]])
-            .iter()
-            .cloned(),
-    );
     let descriptor_set_allocator = StandardDescriptorSetAllocator::new(device.clone());
 
     println!("Loading Textures Files...");
 
-    let crayon_set = texture::Texture::new(
-        device.clone(),
-        &[
-            "assets/images/crayon.png",
-            "assets/images/cross.png",
-            "assets/images/circle.png",
-            "assets/images/eraser.png",
-        ],
-        &memory_allocator,
-        &mut first_frame,
-        MipmapsCount::Log2,
-        pipelines.texture_array_pipeline.clone(),
-        &descriptor_set_allocator,
-    );
-
-    let drawing_set = texture::Texture::new(
-        device.clone(),
-        &["assets/images/drawing_texture.png"],
-        &memory_allocator,
-        &mut first_frame,
-        MipmapsCount::One,
-        pipelines.texture_pipeline.clone(),
-        &descriptor_set_allocator,
-    );
-
-    let background_set = texture::Texture::new(
-        device.clone(),
-        &["assets/images/magic_pen_bg.png"],
-        &memory_allocator,
-        &mut first_frame,
-        MipmapsCount::One,
-        pipelines.texture_pipeline.clone(),
-        &descriptor_set_allocator,
-    );
-
-    let flag_set = texture::Texture::new(
+    let test_set = texture::Texture::new(
         device.clone(),
         &["assets/images/pineapple.png"],
         &memory_allocator,
@@ -157,11 +129,74 @@ pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Se
         &descriptor_set_allocator,
     );
 
+    let ball = texture::Texture::new(
+        device.clone(),
+        &["assets/images/ball.png"],
+        &memory_allocator,
+        &mut first_frame,
+        MipmapsCount::One,
+        pipelines.texture_pipeline.clone(),
+        &descriptor_set_allocator,
+    );
+
+    let background_set = texture::Texture::new(
+        device.clone(),
+        &[
+            "assets/images/background/0001.png",
+            "assets/images/background/0002.png",
+            "assets/images/background/0003.png",
+            "assets/images/background/0004.png",
+            "assets/images/background/0005.png",
+            "assets/images/background/0006.png",
+            "assets/images/background/0007.png",
+            "assets/images/background/0008.png",
+            "assets/images/background/0009.png",
+            "assets/images/background/0010.png",
+            "assets/images/background/0011.png",
+            "assets/images/background/0012.png",
+            "assets/images/background/0013.png",
+            "assets/images/background/0014.png",
+            "assets/images/background/0015.png",
+            "assets/images/background/0016.png",
+            "assets/images/background/0017.png",
+            "assets/images/background/0018.png",
+            "assets/images/background/0019.png",
+            "assets/images/background/0020.png",
+            "assets/images/background/0021.png",
+            "assets/images/background/0022.png",
+            "assets/images/background/0023.png",
+            "assets/images/background/0024.png",
+        ],
+        &memory_allocator,
+        &mut first_frame,
+        MipmapsCount::One,
+        pipelines.texture_array_pipeline.clone(),
+        &descriptor_set_allocator,
+    );
+
+    let level_status_set = texture::Texture::new(
+        device.clone(),
+        &[
+            "assets/images/file-tree-0-green.png",
+            "assets/images/file-tree-1-green.png",
+            "assets/images/file-tree-2-green.png",
+            "assets/images/file-tree-3-green.png",
+            "assets/images/file-tree-4-green.png",
+            "assets/images/file-tree-5-green.png",
+            "assets/images/file-tree-6-green.png",
+        ],
+        &memory_allocator,
+        &mut first_frame,
+        MipmapsCount::One,
+        pipelines.texture_array_pipeline.clone(),
+        &descriptor_set_allocator,
+    );
+
     let game_textures = Textures {
         background: background_set,
-        tool: crayon_set,
-        draw_line: drawing_set,
-        flag: flag_set,
+        test_set,
+        ball,
+        level: level_status_set,
     };
 
     let mut viewport = Viewport {
@@ -190,12 +225,13 @@ pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Se
     let mut is_first_run = true;
     let mut circles_vertices = vec![];
     let mut polygons_vertices = vec![];
-    let mut flag_vertices = vec![];
+    let mut lvl_idx = 0;
 
     let window = surface.object().unwrap().downcast_ref::<Window>().unwrap();
+    window.set_cursor_visible(false);
+    let mut timer = Instant::now();
 
-    let dimensions = window.inner_size();
-
+    let mut animation_or_sth = 0;
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
@@ -204,24 +240,27 @@ pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Se
         } => {
             *control_flow = ControlFlow::Exit;
         }
-
-        Event::WindowEvent {
-            event: WindowEvent::MouseInput { state, button, .. },
-            ..
-        } => {
-            game_state.handle_mouse_input(state, button, &mut messages);
-        }
         Event::WindowEvent {
             event: WindowEvent::CursorMoved { position, .. },
             ..
         } => {
-            game_state.handle_mouse_moved(position, dimensions);
+            game_state.handle_mouse_moved(position, dimensions, &mut messages);
         }
         Event::WindowEvent {
             event: WindowEvent::KeyboardInput { input, .. },
             ..
         } => {
-           game_state.handle_keyboard_input(input);
+            match input {
+                KeyboardInput {
+                    state: ElementState::Pressed,
+                    virtual_keycode: Some(winit::event::VirtualKeyCode::Escape),
+                    ..
+                } => {
+                    *control_flow = ControlFlow::Exit;
+                }
+                _ => {}
+            };
+            game_state.handle_keyboard_input(input, &mut messages);
         }
         Event::WindowEvent {
             event: WindowEvent::Resized(_),
@@ -235,18 +274,18 @@ pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Se
                 is_first_run = false;
             }
 
-            //draws static circle
-            if game_state.0.timer.elapsed() > Duration::from_millis(500)
-                && game_state.0.is_holding
-                && matches!(game_state.0.tool, Tool::Crayon)
-            {
-                game_state.0.static_circle.radius =
-                    (game_state.0.timer.elapsed().as_secs_f64() - 0.5) / 7.;
-            }
-
             // window section
             let window = surface.object().unwrap().downcast_ref::<Window>().unwrap();
             let dimensions = window.inner_size();
+            if game_state.reset_position {
+                window
+                    .set_cursor_position(LogicalPosition::new(
+                        dimensions.width / 2,
+                        dimensions.height / 2,
+                    ))
+                    .unwrap();
+                game_state.reset_position = false;
+            }
             if dimensions.width == 0 || dimensions.height == 0 {
                 return;
             }
@@ -282,6 +321,17 @@ pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Se
                     &memory_allocator,
                     max_sample_count,
                 );
+
+                // draw_text = DrawText::new(
+                //     device.clone(),
+                //     queue.clone(),
+                //     swapchain.clone(),
+                //     &new_images,
+                //     &memory_allocator,
+                //     [dimensions.width as u32, dimensions.height as u32],
+                //     max_sample_count,
+                // );
+
                 recreate_swapchain = false;
             }
 
@@ -300,213 +350,22 @@ pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Se
             }
 
             match channel.try_recv() {
-                Ok(mut received) => {
+                Ok(received) => {
                     (polygons_vertices, circles_vertices) = format_data((
-                        {
-                            received.rigid_bindings.into_iter().for_each(|point| {
-                                received.polygons.push(WithColor {
-                                    color: [0.0, 0.0, 0.0],
-                                    shape: Polygon {
-                                        centroid: point,
-                                        vertices: vec![
-                                            Point(point.0 + 0.01, point.1 + 0.03),
-                                            Point(point.0 - 0.01, point.1 + 0.03),
-                                            Point(point.0 + 0.01, point.1 - 0.03),
-                                            Point(point.0 - 0.01, point.1 - 0.03),
-                                        ],
-                                    },
-                                });
-                                received.polygons.push(WithColor {
-                                    color: [0.0, 0.0, 0.0],
-                                    shape: Polygon {
-                                        centroid: point,
-                                        vertices: vec![
-                                            Point(point.0 + 0.01, point.1 + 0.03),
-                                            Point(point.0 + 0.01, point.1 - 0.03),
-                                            Point(point.0 - 0.01, point.1 + 0.03),
-                                            Point(point.0 - 0.01, point.1 - 0.03),
-                                        ],
-                                    },
-                                });
-                                received.polygons.push(WithColor {
-                                    color: [0.0, 0.0, 0.0],
-                                    shape: Polygon {
-                                        centroid: point,
-                                        vertices: vec![
-                                            Point(point.0 + 0.03, point.1 + 0.01),
-                                            Point(point.0 + 0.03, point.1 - 0.01),
-                                            Point(point.0 - 0.03, point.1 + 0.01),
-                                            Point(point.0 - 0.03, point.1 - 0.01),
-                                        ],
-                                    },
-                                });
-                                received.polygons.push(WithColor {
-                                    color: [0.0, 0.0, 0.0],
-                                    shape: Polygon {
-                                        centroid: point,
-                                        vertices: vec![
-                                            Point(point.0 + 0.03, point.1 + 0.01),
-                                            Point(point.0 + 0.03, point.1 - 0.01),
-                                            Point(point.0 - 0.03, point.1 + 0.01),
-                                            Point(point.0 - 0.03, point.1 - 0.01),
-                                        ],
-                                    },
-                                });
-                            });
-
-                            received
-                                .unbound_rigid_bindings
-                                .into_iter()
-                                .for_each(|point| {
-                                    received.polygons.push(WithColor {
-                                        color: [1.0, 0.0, 1.0],
-                                        shape: Polygon {
-                                            centroid: point,
-                                            vertices: vec![
-                                                Point(point.0 + 0.01, point.1 + 0.03),
-                                                Point(point.0 - 0.01, point.1 + 0.03),
-                                                Point(point.0 + 0.01, point.1 - 0.03),
-                                                Point(point.0 - 0.01, point.1 - 0.03),
-                                            ],
-                                        },
-                                    });
-                                    received.polygons.push(WithColor {
-                                        color: [1.0, 0.0, 1.0],
-                                        shape: Polygon {
-                                            centroid: point,
-                                            vertices: vec![
-                                                Point(point.0 + 0.01, point.1 + 0.03),
-                                                Point(point.0 + 0.01, point.1 - 0.03),
-                                                Point(point.0 - 0.01, point.1 + 0.03),
-                                                Point(point.0 - 0.01, point.1 - 0.03),
-                                            ],
-                                        },
-                                    });
-                                    received.polygons.push(WithColor {
-                                        color: [1.0, 0.0, 1.0],
-                                        shape: Polygon {
-                                            centroid: point,
-                                            vertices: vec![
-                                                Point(point.0 + 0.03, point.1 + 0.01),
-                                                Point(point.0 + 0.03, point.1 - 0.01),
-                                                Point(point.0 - 0.03, point.1 + 0.01),
-                                                Point(point.0 - 0.03, point.1 - 0.01),
-                                            ],
-                                        },
-                                    });
-                                    received.polygons.push(WithColor {
-                                        color: [1.0, 0.0, 1.0],
-                                        shape: Polygon {
-                                            centroid: point,
-                                            vertices: vec![
-                                                Point(point.0 + 0.03, point.1 + 0.01),
-                                                Point(point.0 + 0.03, point.1 - 0.01),
-                                                Point(point.0 - 0.03, point.1 + 0.01),
-                                                Point(point.0 - 0.03, point.1 - 0.01),
-                                            ],
-                                        },
-                                    });
-                                });
-                            received.polygons
-                        },
-                        {
-                            received.circles.push(WithColor {
-                                color: [0.0, 0.0, 0.0],
-                                shape: game_state.0.static_circle,
-                            });
-                            received.hinges.into_iter().for_each(|point| {
-                                received.circles.push(WithColor {
-                                    color: [0.0, 0.0, 0.0],
-                                    shape: Circle {
-                                        center: point,
-                                        radius: 0.02,
-                                    },
-                                });
-                            });
-                            received.unbound_hinges.into_iter().for_each(|point| {
-                                received.circles.push(WithColor {
-                                    color: [1.0, 0.0, 1.0],
-                                    shape: Circle {
-                                        center: point,
-                                        radius: 0.02,
-                                    },
-                                });
-                            });
-                            received.circles
-                        },
+                        received.polygons,
+                        received.circles,
+                        received.lasers,
+                        received.laser_boxes,
+                        received.doors,
                     ));
-
-                    flag_vertices = received.flags;
+                    lvl_idx = received.level_idx;
                 }
                 Err(channel::TryRecvError::Disconnected) => *control_flow = ControlFlow::Exit,
                 _ => {}
             }
 
-            let flags_vertex_buffer = create_vertex_buffer(&memory_allocator, {
-                if !flag_vertices.is_empty() {
-                    create_positioned_vertexes(
-                        flag_vertices
-                            .iter()
-                            .flat_map(|polygon| {
-                                [
-                                    [polygon.vertices[3].0 as f32, -polygon.vertices[3].1 as f32],
-                                    [polygon.vertices[0].0 as f32, -polygon.vertices[0].1 as f32],
-                                    [polygon.vertices[2].0 as f32, -polygon.vertices[2].1 as f32],
-                                    [polygon.vertices[1].0 as f32, -polygon.vertices[1].1 as f32],
-                                ]
-                            })
-                            .collect(),
-                    )
-                } else {
-                    vec![Vertex::default(); 4]
-                }
-            });
-
-            let tool_vertex_buffer = create_vertex_buffer(
-                &memory_allocator,
-                create_positioned_vertexes(vec![
-                    [
-                        game_state.0.mouse_position[0],
-                        game_state.0.mouse_position[1] - 0.2,
-                    ],
-                    game_state.0.mouse_position,
-                    [
-                        game_state.0.mouse_position[0] + 0.2,
-                        game_state.0.mouse_position[1] - 0.2,
-                    ],
-                    [
-                        game_state.0.mouse_position[0] + 0.2,
-                        game_state.0.mouse_position[1],
-                    ],
-                ])
-                .into_iter()
-                .map(|mut vert| {
-                    vert.texture_id = game_state.0.tool as u32;
-                    vert
-                })
-                .collect::<Vec<_>>()
-                .iter()
-                .cloned(),
-            );
-
             let vertex_buffer_polygons =
                 create_vertex_buffer(&memory_allocator, polygons_vertices.clone());
-
-            let vertex_lines_buffer = create_vertex_buffer(
-                &memory_allocator,
-                game_state.0
-                    .line_points
-                    .windows(2)
-                    .flat_map(|points| {
-                        create_positioned_vertexes(vec![
-                            [points[1][0], points[1][1]],
-                            [points[1][0] - 0.01, points[1][1] - 0.01],
-                            [points[0][0] - 0.01, points[0][1] - 0.01],
-                            points[0],
-                        ])
-                    })
-                    .collect::<Vec<_>>(),
-            );
 
             let vertex_buffer_circles = if !circles_vertices.is_empty() {
                 create_vertex_buffer(&memory_allocator, circles_vertices.clone())
@@ -521,6 +380,74 @@ pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Se
             )
             .unwrap();
 
+            if timer.elapsed() > Duration::from_millis(60) {
+                animation_or_sth = animation_or_sth + 1;
+                if animation_or_sth == 25 {
+                    animation_or_sth = 0;
+                }
+                timer = Instant::now();
+            }
+
+            let texture_buffer = create_vertex_buffer(
+                &memory_allocator,
+                [
+                    Vertex {
+                        position: [-1.0, -1.0],
+                        tex_position: [0.0, 0.0],
+                        texture_id: animation_or_sth,
+                        ..Default::default()
+                    },
+                    Vertex {
+                        position: [-1.0, 1.0],
+                        tex_position: [0.0, 1.0],
+                        texture_id: animation_or_sth,
+                        ..Default::default()
+                    },
+                    Vertex {
+                        position: [1.0, -1.0],
+                        tex_position: [1.0, 0.0],
+                        texture_id: animation_or_sth,
+                        ..Default::default()
+                    },
+                    Vertex {
+                        position: [1.0, 1.0],
+                        tex_position: [1.0, 1.0],
+                        texture_id: animation_or_sth,
+                        ..Default::default()
+                    },
+                ],
+            );
+
+            let level_status_buffer = create_vertex_buffer(
+                &memory_allocator,
+                [
+                    Vertex {
+                        position: [-0.9, -0.9],
+                        tex_position: [0.0, 0.0],
+                        texture_id: lvl_idx as u32,
+                        ..Default::default()
+                    },
+                    Vertex {
+                        position: [-0.9, -0.5],
+                        tex_position: [0.0, 1.0],
+                        texture_id: lvl_idx as u32,
+                        ..Default::default()
+                    },
+                    Vertex {
+                        position: [-0.2, -0.9],
+                        tex_position: [1.0, 0.0],
+                        texture_id: lvl_idx as u32,
+                        ..Default::default()
+                    },
+                    Vertex {
+                        position: [-0.2, -0.5],
+                        tex_position: [1.0, 1.0],
+                        texture_id: lvl_idx as u32,
+                        ..Default::default()
+                    },
+                ],
+            );
+
             SimpleShapes::render(
                 &mut builder,
                 &mut framebuffers,
@@ -530,13 +457,9 @@ pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Se
                 &pipelines,
                 VertexBuffers {
                     background: texture_buffer.clone(),
-                    tool: tool_vertex_buffer,
                     polygons: vertex_buffer_polygons,
                     circles: vertex_buffer_circles,
-                    line: vertex_lines_buffer,
-                    // hinges: hinges_vertex_buffer,
-                    // unbound_hinges: unbound_hinges_vertex_buffer,
-                    flags: flags_vertex_buffer,
+                    level_status: level_status_buffer,
                 },
             );
             let command_buffer = builder.build().unwrap();
@@ -571,8 +494,6 @@ pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Se
     });
 }
 
-
-
 fn create_vertex_buffer(
     memory_allocator: &(impl MemoryAllocator + ?Sized),
     vertexes: impl IntoIterator<Item = Vertex, IntoIter = impl ExactSizeIterator<Item = Vertex>>,
@@ -591,58 +512,118 @@ fn create_vertex_buffer(
 
 /// Changes Polygon to correct order of Vertexes, also creates quads needed to draw cricles
 fn format_data(
-    (polygons, circles): (Vec<WithColor<Polygon>>, Vec<WithColor<Circle>>),
+    (polygons, circles, lasers, laser_boxes, doors): (
+        Vec<WithColor<Polygon>>,
+        Vec<WithColor<Circle>>,
+        Vec<WithColor<Polygon>>,
+        Vec<WithColor<Polygon>>,
+        Vec<WithColor<Polygon>>,
+    ),
 ) -> (Vec<Vertex>, Vec<Vertex>) {
-    let polygons_vertexes = polygons
+    let array = polygons
         .into_iter()
+        .chain(lasers.into_iter())
+        .chain(laser_boxes.into_iter())
+        .chain(doors.into_iter());
+    let polygons_vertexes = array
         .enumerate()
         .flat_map(|(i, pol)| {
-            let pos0 = [pol.shape.centroid.0 as f32, -pol.shape.centroid.1 as f32];
-            const OFFSET: f32 = 0.02;
-            windows::Looped::<_, 2>::from(pol.shape.vertices.into_iter())
-                .flat_map(move |[prev, next]| {
-                    let pos2 = [prev.0 as f32, -prev.1 as f32];
-                    let pos1 = [next.0 as f32, -next.1 as f32];
-                    let d2 = calculate_vertex_distance(pos0, pos2);
-                    let d1 = calculate_vertex_distance(pos0, pos1);
-                    let r2 = d2 - OFFSET;
-                    let r1 = d1 - OFFSET;
-                    let r0 = (pol
-                        .shape
-                        .centroid
-                        .to(prev)
-                        .cross(pol.shape.centroid.to(next))
-                        .abs() as f32
-                        / calculate_vertex_distance(pos1, pos2))
-                        - OFFSET;
-                    [
-                        Vertex {
-                            position: pos2,
-                            texture_id: i as u32,
-                            dist: d2,
-                            radius: r2,
-                            center: [0.0, 0.0],
-                            color: pol.color,
-                        },
-                        Vertex {
-                            position: pos1,
-                            texture_id: i as u32,
-                            dist: d1,
-                            radius: r1,
-                            center: [0.0, 0.0],
-                            color: pol.color,
-                        },
-                        Vertex {
-                            position: pos0,
-                            texture_id: i as u32,
-                            dist: 0.0,
-                            radius: r0,
-                            center: [0.0, 0.0],
-                            color: pol.color,
-                        },
-                    ]
-                })
-                .collect::<Vec<_>>()
+            std::iter::once(Vertex {
+                texture_id: i as u32,
+                position: [
+                    pol.shape.vertices.last().unwrap().0 as f32,
+                    -pol.shape.vertices.last().unwrap().1 as f32,
+                ],
+                ..Default::default()
+            })
+            .chain(if pol.shape.vertices.len() == 4 {
+                vec![
+                    Vertex {
+                        texture_id: i as u32,
+                        position: [
+                            pol.shape.vertices[3].0 as f32,
+                            -pol.shape.vertices[3].1 as f32,
+                        ],
+                        color: pol.color,
+                        tex_position: [0.0, 0.0],
+                        ..Default::default()
+                    },
+                    Vertex {
+                        texture_id: i as u32,
+                        position: [
+                            pol.shape.vertices[0].0 as f32,
+                            -pol.shape.vertices[0].1 as f32,
+                        ],
+                        color: pol.color,
+                        tex_position: [0.0, 1.0],
+                        ..Default::default()
+                    },
+                    Vertex {
+                        texture_id: i as u32,
+                        position: [
+                            pol.shape.vertices[2].0 as f32,
+                            -pol.shape.vertices[2].1 as f32,
+                        ],
+                        color: pol.color,
+                        tex_position: [1.0, 0.0],
+                        ..Default::default()
+                    },
+                    Vertex {
+                        texture_id: i as u32,
+                        position: [
+                            pol.shape.vertices[1].0 as f32,
+                            -pol.shape.vertices[1].1 as f32,
+                        ],
+                        color: pol.color,
+                        tex_position: [0.0, 0.0],
+                        ..Default::default()
+                    },
+                ]
+                .into_iter()
+            } else {
+                vec![
+                    Vertex {
+                        texture_id: i as u32,
+                        position: [
+                            pol.shape.vertices[2].0 as f32,
+                            -pol.shape.vertices[2].1 as f32,
+                        ],
+                        color: pol.color,
+                        tex_position: [0.0, 0.0],
+                        ..Default::default()
+                    },
+                    Vertex {
+                        texture_id: i as u32,
+                        position: [
+                            pol.shape.vertices[0].0 as f32,
+                            -pol.shape.vertices[0].1 as f32,
+                        ],
+                        color: pol.color,
+                        tex_position: [1.0, 0.0],
+                        ..Default::default()
+                    },
+                    Vertex {
+                        texture_id: i as u32,
+                        position: [
+                            pol.shape.vertices[1].0 as f32,
+                            -pol.shape.vertices[1].1 as f32,
+                        ],
+                        color: pol.color,
+                        tex_position: [1.0, 0.0],
+                        ..Default::default()
+                    },
+                ]
+                .into_iter()
+            })
+            .chain(std::iter::once(Vertex {
+                texture_id: i as u32,
+                position: [
+                    pol.shape.vertices[1].0 as f32,
+                    -pol.shape.vertices[1].1 as f32,
+                ],
+                ..Default::default()
+            }))
+            .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
     let circles_vertexes = circles
@@ -650,34 +631,16 @@ fn format_data(
         .flat_map(|circle| {
             let color = circle.color;
             let center = [circle.shape.center.0 as f32, -circle.shape.center.1 as f32];
-            let radius = circle.shape.radius as f32;
+            let radius = circle.shape.radius;
+            let center_y = -circle.shape.center.1;
+            let center_x = circle.shape.center.0;
             let positions = [
-                [
-                    circle.shape.center.0 as f32,
-                    (-(circle.shape.center.1 - circle.shape.radius * 2.0_f64.sqrt())) as f32,
-                ],
-                [
-                    (circle.shape.center.0 - circle.shape.radius * 2.0_f64.sqrt()) as f32,
-                    -circle.shape.center.1 as f32,
-                ],
-                [
-                    circle.shape.center.0 as f32,
-                    (-(circle.shape.center.1 + circle.shape.radius * 2.0_f64.sqrt())) as f32,
-                ],
-                [
-                    circle.shape.center.0 as f32,
-                    (-(circle.shape.center.1 + circle.shape.radius * 2.0_f64.sqrt())) as f32,
-                ],
-                [
-                    (circle.shape.center.0 + circle.shape.radius * 2.0_f64.sqrt()) as f32,
-                    -circle.shape.center.1 as f32,
-                ],
-                [
-                    circle.shape.center.0 as f32,
-                    (-(circle.shape.center.1 - circle.shape.radius * 2.0_f64.sqrt())) as f32,
-                ],
+                [(center_x - radius) as f32, (center_y + radius) as f32],
+                [(center_x - radius) as f32, (center_y - radius) as f32],
+                [(center_x + radius) as f32, (center_y + radius) as f32],
+                [(center_x + radius) as f32, (center_y - radius) as f32],
             ];
-            create_circle_vertices(positions, radius, center, color)
+            create_circle_vertices(positions, radius as f32, center, color)
         })
         .collect::<Vec<_>>();
 
@@ -685,36 +648,39 @@ fn format_data(
 }
 
 fn create_circle_vertices(
-    positions: [[f32; 2]; 6],
+    positions: [[f32; 2]; 4],
     radius: f32,
     center: [f32; 2],
     color: [f32; 3],
 ) -> Vec<Vertex> {
+    let tex_coords = [[0.2, 0.8], [0.2, 0.2], [0.8, 0.8], [0.8, 0.2]];
     positions
         .into_iter()
-        .map(|position| Vertex {
+        .enumerate()
+        .map(|(i, position)| Vertex {
             position,
             radius,
             center,
-            color,
+            color: [1.0, 0.0, 1.0],
+            tex_position: tex_coords[i],
             ..Default::default()
         })
         .collect()
 }
 
-fn calculate_vertex_distance(pos0: [f32; 2], pos1: [f32; 2]) -> f32 {
-    ((pos0[0] - pos1[0]).powi(2) + (pos0[1] - pos1[1]).powi(2)).sqrt()
-}
+// fn calculate_vertex_distance(pos0: [f32; 2], pos1: [f32; 2]) -> f32 {
+//     ((pos0[0] - pos1[0]).powi(2) + (pos0[1] - pos1[1]).powi(2)).sqrt()
+// }
 
-fn create_positioned_vertexes(positions: Vec<[f32; 2]>) -> Vec<Vertex> {
-    positions
-        .into_iter()
-        .map(|position| Vertex {
-            position,
-            ..Default::default()
-        })
-        .collect()
-}
+// fn create_positioned_vertexes(positions: Vec<[f32; 2]>) -> Vec<Vertex> {
+//     positions
+//         .into_iter()
+//         .map(|position| Vertex {
+//             position,
+//             ..Default::default()
+//         })
+//         .collect()
+// }
 
 /// This method is called once during initialization, then again whenever the window is resized
 fn window_size_dependent_setup(

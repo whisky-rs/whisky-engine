@@ -10,7 +10,7 @@ layout(location = 0) out vec4 f_color;
 
 void main() {
 
-    float opacity = smoothstep(radius - 0.005, radius, dist);
-    f_color = vec4(color, opacity);
+    // float opacity = smoothstep(radius - 0.005, radius, dist);
+    f_color = vec4(color, 1.0);
 
 }

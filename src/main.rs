@@ -1,16 +1,20 @@
 use crossbeam::channel::{self, TryRecvError};
-use game_logic::{GameState, GameStateProperties, Tool};
-use geometry::Point;
+use game_logic::GameState;
+use geometry::{Laser, Point};
 use levels::{Level, LoadError};
-use std::{env, thread, time::{Duration, Instant}};
+use std::{
+    env, thread,
+    time::{Duration, Instant},
+};
 
 use physics::{compute, shape::Circle};
 
+pub mod game_logic;
 pub mod geometry;
 pub mod graphics_engine;
 pub mod levels;
+pub mod phone_connector;
 pub mod physics;
-pub mod game_logic;
 
 pub enum InputMessage {
     Erase(Point),
@@ -18,6 +22,8 @@ pub enum InputMessage {
     Hinge(Point),
     DrawPolygon(Vec<[f32; 2]>),
     DrawCircle(geometry::Circle),
+    Angle(f32),
+    Jump,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -32,26 +38,38 @@ pub enum ArgError {
 fn main() -> Result<(), ArgError> {
     let (shapes_tx, shapes_rx) = channel::bounded(1);
     let (messages_tx, messages_rx) = channel::unbounded();
+    let (phone_tx, phone_rx) = channel::unbounded();
 
-    let level = Level::load_from_file(&env::args().nth(1).ok_or(ArgError::MissingFileName)?)?;
+    let mut level = Level::load_from_file(&env::args().nth(1).ok_or(ArgError::MissingFileName)?)?;
 
-    let game_state = GameState(GameStateProperties {
+    phone_connector::listen_for_phone(phone_tx);
+
+    let game_state = GameState {
         mouse_position: [1.5, 1.5],
-        line_points: vec![[0.0, 0.0], [0.0, 0.0]],
-        static_circle: geometry::Circle  {
+        player: geometry::Circle {
             center: Point(1.5, 1.5),
             radius: 0.,
         },
-        is_beginning_draw: true,
-        is_mouse_clicked: false,
-        is_holding: false,
         timer: Instant::now(),
-        tool: Tool::Crayon,
-    });
+        reset_position: false,
+    };
 
     let physics = thread::spawn(move || {
-        let mut physics = physics::Engine::new(shapes_tx, level);
+        let mut physics = physics::Engine::new(shapes_tx, level.clone());
+        let mut connected = false;
         loop {
+            if let Some(ref next_level) = physics.next_level {
+                let level = Level::load_from_file(next_level).unwrap();
+                let name_owned = next_level.clone();
+                physics = physics.reload_level(level, name_owned);
+            }
+            match phone_rx.try_recv() {
+                Ok(phone_connector::Message::Connected) => connected = true,
+                Ok(phone_connector::Message::Disconnected) => connected = false,
+                Ok(phone_connector::Message::AngleDiff(angle)) => physics.angle += angle,
+                Err(TryRecvError::Disconnected) => return,
+                Err(TryRecvError::Empty) => {}
+            }
             match messages_rx.try_recv() {
                 Ok(InputMessage::Rigid(point)) => physics.add_rigid(point),
                 Ok(InputMessage::Erase(point)) => physics.erase_at(point),
@@ -66,6 +84,12 @@ fn main() -> Result<(), ArgError> {
                 Ok(InputMessage::DrawCircle(geometry::Circle { center, radius })) => {
                     physics.add_circle(Circle::new(center, radius))
                 }
+                Ok(InputMessage::Angle(angle)) => {
+                    if !connected {
+                        physics.angle = (physics.angle + angle) % (std::f32::consts::PI * 2.0);
+                    }
+                }
+                Ok(InputMessage::Jump) => physics.jump(),
                 Err(TryRecvError::Disconnected) => return,
                 Err(TryRecvError::Empty) => {}
             }

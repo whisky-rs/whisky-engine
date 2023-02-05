@@ -10,6 +10,7 @@ pub struct Vertex {
     pub dist: f32,
     pub center: [f32; 2],
     pub color: [f32; 3],
+    pub tex_position: [f32; 2],
 }
 
-impl_vertex!(Vertex, position, texture_id, radius, dist, center, color);
+impl_vertex!(Vertex, position, texture_id, radius, dist, center, color, tex_position);
