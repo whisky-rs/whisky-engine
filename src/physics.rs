@@ -546,6 +546,18 @@ impl Engine {
             circle.shape.rotate(self.angle);
         }
 
+        for circle in &mut lasers {
+            circle.shape.rotate(self.angle);
+        }
+
+        for circle in &mut laser_boxes {
+            circle.shape.rotate(self.angle);
+        }
+
+        for circle in &mut doors {
+            circle.shape.rotate(self.angle);
+        }
+
         if let Err(TrySendError::Disconnected(_)) = self.channel.try_send(DisplayMessage {
             polygons,
             circles,
