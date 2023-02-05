@@ -163,17 +163,9 @@ impl SimpleShapes {
         textures: &Textures,
         pipelines: &Pipelines,
         buffers: VertexBuffers,
-        mut draw_text: &mut DrawText,
-        image_num: usize,
-        dimensions: [usize; 2],
-        descriptor_set_allocator: &StandardDescriptorSetAllocator,
-        memory_allocator: &impl MemoryAllocator,
     ) {
 
 
-draw_text.queue_text(200.0, 50.0, 20.0, [1.0, 1.0, 1.0, 1.0], "The quick brown fox jumps over the lazy dog.");
-draw_text.queue_text(20.0, 200.0, 190.0, [0.0, 1.0, 1.0, 1.0], "Hello world!");
-draw_text.queue_text(50.0, 350.0, 70.0, [1.0, 1.0, 1.0, 1.0], "Overlap");
 
 
         builder
@@ -206,8 +198,14 @@ draw_text.queue_text(50.0, 350.0, 70.0, [1.0, 1.0, 1.0, 1.0], "Overlap");
             .bind_vertex_buffers(0, buffers.polygons.clone())
             .draw(buffers.polygons.len() as u32, 1, 0, 0)
             .unwrap()
-            .bind_pipeline_graphics(pipelines.circle_pipeline.clone())
+            .bind_pipeline_graphics(pipelines.polygon_pipeline.clone())
             .bind_vertex_buffers(0, buffers.circles.clone())
+            // .bind_descriptor_sets(
+            //     PipelineBindPoint::Graphics,
+            //     pipelines.texture_pipeline.layout().clone(),
+            //     0,
+            //     textures.ball.0.clone(),
+            // )
             .draw(buffers.circles.len() as u32, 1, 0, 0)
             .unwrap()
             .end_render_pass()

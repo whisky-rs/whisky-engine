@@ -57,6 +57,7 @@ pub struct VertexBuffers {
 pub struct Textures {
     background: texture::Texture,
     test_set: texture::Texture,
+    ball: texture::Texture,
 }
 
 pub struct Pipelines {
@@ -134,6 +135,16 @@ pub fn run(
         &descriptor_set_allocator,
     );
 
+    let ball = texture::Texture::new(
+        device.clone(),
+        &["assets/images/ball.png"],
+        &memory_allocator,
+        &mut first_frame,
+        MipmapsCount::One,
+        pipelines.texture_pipeline.clone(),
+        &descriptor_set_allocator,
+    );
+
     let background_set = texture::Texture::new(
         device.clone(),
         &[
@@ -164,7 +175,7 @@ pub fn run(
         ],
         &memory_allocator,
         &mut first_frame,
-        MipmapsCount::Log2,
+        MipmapsCount::One,
         pipelines.texture_array_pipeline.clone(),
         &descriptor_set_allocator,
     );
@@ -172,6 +183,7 @@ pub fn run(
     let game_textures = Textures {
         background: background_set,
         test_set,
+        ball,
     };
 
     let mut viewport = Viewport {
@@ -385,11 +397,6 @@ pub fn run(
                     polygons: vertex_buffer_polygons,
                     circles: vertex_buffer_circles,
                 },
-                &mut draw_text,
-                image_index as usize,
-                [dimensions.width as usize, dimensions.height as usize],
-                &descriptor_set_allocator,
-                &memory_allocator,
             );
             let command_buffer = builder.build().unwrap();
 
@@ -560,10 +567,10 @@ fn format_data(
                     (circle.shape.center.0 - circle.shape.radius * 2.0_f64.sqrt()) as f32,
                     -circle.shape.center.1 as f32,
                 ],
-                [
-                    circle.shape.center.0 as f32,
-                    (-(circle.shape.center.1 + circle.shape.radius * 2.0_f64.sqrt())) as f32,
-                ],
+                // [
+                //     circle.shape.center.0 as f32,
+                //     (-(circle.shape.center.1 + circle.shape.radius * 2.0_f64.sqrt())) as f32,
+                // ],
                 [
                     circle.shape.center.0 as f32,
                     (-(circle.shape.center.1 + circle.shape.radius * 2.0_f64.sqrt())) as f32,
@@ -572,10 +579,10 @@ fn format_data(
                     (circle.shape.center.0 + circle.shape.radius * 2.0_f64.sqrt()) as f32,
                     -circle.shape.center.1 as f32,
                 ],
-                [
-                    circle.shape.center.0 as f32,
-                    (-(circle.shape.center.1 - circle.shape.radius * 2.0_f64.sqrt())) as f32,
-                ],
+                // [
+                //     circle.shape.center.0 as f32,
+                //     (-(circle.shape.center.1 - circle.shape.radius * 2.0_f64.sqrt())) as f32,
+                // ],
             ];
             create_circle_vertices(positions, radius, center, color)
         })
@@ -585,18 +592,21 @@ fn format_data(
 }
 
 fn create_circle_vertices(
-    positions: [[f32; 2]; 6],
+    positions: [[f32; 2]; 4],
     radius: f32,
     center: [f32; 2],
     color: [f32; 3],
 ) -> Vec<Vertex> {
+    let tex_coords = [[0.0, 1.0], [0.0, 0.0],[1.0, 0.0],[1.0, 1.0],];
     positions
         .into_iter()
-        .map(|position| Vertex {
+        .enumerate()
+        .map(|(i, position)| Vertex {
             position,
             radius,
             center,
-            color,
+            color: [1.0, 0.0, 1.0],
+            tex_position: tex_coords[i],
             ..Default::default()
         })
         .collect()
