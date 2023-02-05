@@ -55,7 +55,7 @@ impl Polygon {
         )
         .reduce(|(inertia_sum, mass_sum), (inertia, mass)| (inertia_sum + inertia, mass_sum + mass))
         .unwrap();
-        (inertia_sum / 12.0, mass_sum / 2.0)
+        ((inertia_sum / 12.0).abs(), (mass_sum / 2.0).abs())
     }
 }
 
