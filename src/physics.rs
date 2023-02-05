@@ -287,12 +287,14 @@ impl Engine {
                 },
             );
             engine.polygons.push(WithColor {
-                color: if entity.is_deadly {
+                color: if !entity.is_static {
+                    [1.0, 0.85, 0.22]
+                } else if entity.is_deadly {
                     [1.0, 0.0, 0.0]
                 } else if entity.is_fragile {
                     [0.7, 0.7, 0.7]
                 } else {
-                    [0.3, 0.2, 0.2]
+                    [1.0, 0.85, 0.42]
                 },
                 shape: weak,
             })
@@ -311,12 +313,14 @@ impl Engine {
                 },
             );
             engine.circles.push(WithColor {
-                color: if entity.is_deadly {
+                color: if !entity.is_static {
+                    [1.0, 0.85, 0.22]
+                } else if entity.is_deadly {
                     [1.0, 0.0, 0.0]
                 } else if entity.is_fragile {
                     [0.7, 0.7, 0.7]
                 } else {
-                    [0.3, 0.2, 0.2]
+                    [1.0, 0.85, 0.42]
                 },
                 shape: weak,
             });

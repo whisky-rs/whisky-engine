@@ -41,15 +41,7 @@ fn main() -> Result<(), ArgError> {
     let (phone_tx, phone_rx) = channel::unbounded();
 
     let mut level = Level::load_from_file(&env::args().nth(1).ok_or(ArgError::MissingFileName)?)?;
-    level.doors.push((
-        vec![
-            Point(0.1, 0.1),
-            Point(0.1, 0.2),
-            Point(0.2, 0.2),
-            Point(0.2, 0.1),
-        ],
-        "level3.ron".to_string(),
-    ));
+
     phone_connector::listen_for_phone(phone_tx);
 
     let game_state = GameState {
