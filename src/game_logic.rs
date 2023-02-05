@@ -12,13 +12,23 @@ pub enum Tool {
     Eraser,
 }
 
+#[derive(Debug, Clone)]
+pub struct EditorState {
+    pub is_deadly: bool,
+    pub is_fragile: bool,
+    pub free_quad: Vec<[f32; 2]>,
+    pub is_static: bool
+}
+
 pub struct GameStateProperties {
     pub mouse_position: [f32; 2],
+    pub mpsaved: [f32; 2],
     pub line_points: Vec<[f32; 2]>,
     pub static_circle: Circle,
     pub is_beginning_draw: bool,
     pub is_mouse_clicked: bool,
     pub is_holding: bool,
+    pub ed: EditorState,
     pub timer: Instant,
     pub tool: Tool,
 }
@@ -81,6 +91,29 @@ impl GameState {
             self.0.is_beginning_draw = true;
             self.0.is_holding = false;
         }
+        if button == MouseButton::Right && element_state == ElementState::Pressed {
+            self.0.mpsaved = self.0.mouse_position;
+            eprintln!("aa");
+        }
+        if button == MouseButton::Middle && element_state == ElementState::Pressed {
+            let [mut x1,mut y1] = self.0.mouse_position;
+            let [mut x2,mut y2] = self.0.mpsaved;
+
+            if x1.abs() > 0.95 {
+                x1 *= 1.5
+            }
+            if y1.abs() > 0.95 {
+                y1 *= 1.5
+            }
+            if x2.abs() > 0.95 {
+                x2 *= 1.5
+            }
+            if y2.abs() > 0.95 {
+                y2 *= 1.5
+            }
+            
+            input_physics_actions.send(InputMessage::CreateLevelShape([x1,-y1], [x2,-y2], self.0.ed.clone())).unwrap();
+        }
     }
 
     pub fn handle_mouse_moved(&mut self, position: PhysicalPosition<f64>, dimensions: PhysicalSize<u32>) {
@@ -107,7 +140,7 @@ impl GameState {
          }
     }
 
-    pub fn handle_keyboard_input(&mut self, input: KeyboardInput) {
+    pub fn handle_keyboard_input(&mut self, input: KeyboardInput, input_physics_actions: &mut channel::Sender<InputMessage>) {
         self.0.tool = match input {
             KeyboardInput {
                 state: ElementState::Pressed,
@@ -134,8 +167,59 @@ impl GameState {
                     ),
                 ..
             } => Tool::Crayon,
+            KeyboardInput {
+                state: ElementState::Released,
+                virtual_keycode:
+                    Some(
+                        winit::event::VirtualKeyCode::P
+                    ),
+                ..
+            } => {input_physics_actions.send(InputMessage::RemoveLastShape).unwrap(); self.0.tool}
+            KeyboardInput {
+                state: ElementState::Released,
+                virtual_keycode:
+                    Some(
+                        winit::event::VirtualKeyCode::O
+                    ),
+                ..
+            } => {self.0.ed.is_deadly = !self.0.ed.is_deadly; self.print_editor_state(); self.0.tool}
+            KeyboardInput {
+                state: ElementState::Released,
+                virtual_keycode:
+                    Some(
+                        winit::event::VirtualKeyCode::L
+                    ),
+                ..
+            } => {self.0.ed.is_fragile = !self.0.ed.is_fragile; self.print_editor_state(); self.0.tool}
+            KeyboardInput {
+                state: ElementState::Released,
+                virtual_keycode:
+                    Some(
+                        winit::event::VirtualKeyCode::N
+                    ),
+                ..
+            } => {
+                self.0.ed.free_quad.push(self.0.mouse_position);
+                if self.0.ed.free_quad.len() == 4 {
+                    input_physics_actions.send(InputMessage::CreateLevelShapeFreeQuad(self.0.ed.clone())).unwrap();
+                    self.0.ed.free_quad.clear();
+                };
+                self.0.tool
+            }
+            KeyboardInput {
+                state: ElementState::Released,
+                virtual_keycode:
+                    Some(
+                        winit::event::VirtualKeyCode::K
+                    ),
+                ..
+            } => {self.0.ed.is_static = !self.0.ed.is_static; self.print_editor_state(); self.0.tool}
             _ => self.0.tool,
         };
+    }
+
+    fn print_editor_state(&self) {
+        eprintln!("{:?}", self.0.ed)
     }
 
     fn normalize_mouse_position(

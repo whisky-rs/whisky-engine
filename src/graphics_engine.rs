@@ -1,6 +1,6 @@
 use crossbeam::channel;
 use std::sync::Arc;
-use std::time::{Duration};
+use std::time::Duration;
 use std::vec;
 use vulkano::image::{AttachmentImage, ImageUsage, SampleCount};
 use vulkano::memory::allocator::MemoryAllocator;
@@ -9,7 +9,6 @@ use vulkano::{
     buffer::{BufferUsage, CpuAccessibleBuffer},
     command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, PrimaryCommandBufferAbstract},
     descriptor_set::allocator::StandardDescriptorSetAllocator,
-    format::Format,
     image::{view::ImageView, ImageAccess, MipmapsCount, SwapchainImage},
     memory::allocator::StandardMemoryAllocator,
     pipeline::graphics::viewport::Viewport,
@@ -28,7 +27,7 @@ use winit::{
 
 use vertex::Vertex;
 
-use crate::game_logic::{Tool, GameState};
+use crate::game_logic::{GameState, Tool};
 use crate::geometry::{windows, Circle, Point};
 use crate::graphics_engine::render_pass::SimpleShapes;
 use crate::physics::{DisplayMessage, WithColor};
@@ -43,18 +42,12 @@ mod vertex;
 
 pub struct VertexBuffers {
     background: Arc<CpuAccessibleBuffer<[Vertex]>>,
-    tool: Arc<CpuAccessibleBuffer<[Vertex]>>,
     polygons: Arc<CpuAccessibleBuffer<[Vertex]>>,
     circles: Arc<CpuAccessibleBuffer<[Vertex]>>,
-    line: Arc<CpuAccessibleBuffer<[Vertex]>>,
-    flags: Arc<CpuAccessibleBuffer<[Vertex]>>,
 }
 
 pub struct Textures {
     background: texture::Texture,
-    tool: texture::Texture,
-    draw_line: texture::Texture,
-    flag: texture::Texture,
 }
 
 pub struct Pipelines {
@@ -64,9 +57,12 @@ pub struct Pipelines {
     circle_pipeline: Arc<GraphicsPipeline>,
 }
 
-
 /// Runs simple graphics engine, as argument takes channel providing Polygon data to be drawn
-pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Sender<InputMessage>, mut game_state:  GameState) {
+pub fn run(
+    channel: channel::Receiver<DisplayMessage>,
+    mut messages: channel::Sender<InputMessage>,
+    mut game_state: GameState,
+) {
     let setup::Init {
         device,
         queue,
@@ -112,31 +108,6 @@ pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Se
 
     println!("Loading Textures Files...");
 
-    let crayon_set = texture::Texture::new(
-        device.clone(),
-        &[
-            "assets/images/crayon.png",
-            "assets/images/cross.png",
-            "assets/images/circle.png",
-            "assets/images/eraser.png",
-        ],
-        &memory_allocator,
-        &mut first_frame,
-        MipmapsCount::Log2,
-        pipelines.texture_array_pipeline.clone(),
-        &descriptor_set_allocator,
-    );
-
-    let drawing_set = texture::Texture::new(
-        device.clone(),
-        &["assets/images/drawing_texture.png"],
-        &memory_allocator,
-        &mut first_frame,
-        MipmapsCount::One,
-        pipelines.texture_pipeline.clone(),
-        &descriptor_set_allocator,
-    );
-
     let background_set = texture::Texture::new(
         device.clone(),
         &["assets/images/magic_pen_bg.png"],
@@ -147,21 +118,9 @@ pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Se
         &descriptor_set_allocator,
     );
 
-    let flag_set = texture::Texture::new(
-        device.clone(),
-        &["assets/images/pineapple.png"],
-        &memory_allocator,
-        &mut first_frame,
-        MipmapsCount::One,
-        pipelines.texture_pipeline.clone(),
-        &descriptor_set_allocator,
-    );
 
     let game_textures = Textures {
         background: background_set,
-        tool: crayon_set,
-        draw_line: drawing_set,
-        flag: flag_set,
     };
 
     let mut viewport = Viewport {
@@ -190,12 +149,10 @@ pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Se
     let mut is_first_run = true;
     let mut circles_vertices = vec![];
     let mut polygons_vertices = vec![];
-    let mut flag_vertices = vec![];
 
     let window = surface.object().unwrap().downcast_ref::<Window>().unwrap();
 
     let dimensions = window.inner_size();
-
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
@@ -221,7 +178,7 @@ pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Se
             event: WindowEvent::KeyboardInput { input, .. },
             ..
         } => {
-           game_state.handle_keyboard_input(input);
+            game_state.handle_keyboard_input(input, &mut messages);
         }
         Event::WindowEvent {
             event: WindowEvent::Resized(_),
@@ -233,15 +190,6 @@ pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Se
             if is_first_run {
                 println!("texture loaded");
                 is_first_run = false;
-            }
-
-            //draws static circle
-            if game_state.0.timer.elapsed() > Duration::from_millis(500)
-                && game_state.0.is_holding
-                && matches!(game_state.0.tool, Tool::Crayon)
-            {
-                game_state.0.static_circle.radius =
-                    (game_state.0.timer.elapsed().as_secs_f64() - 0.5) / 7.;
             }
 
             // window section
@@ -300,213 +248,18 @@ pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Se
             }
 
             match channel.try_recv() {
-                Ok(mut received) => {
-                    (polygons_vertices, circles_vertices) = format_data((
-                        {
-                            received.rigid_bindings.into_iter().for_each(|point| {
-                                received.polygons.push(WithColor {
-                                    color: [0.0, 0.0, 0.0],
-                                    shape: Polygon {
-                                        centroid: point,
-                                        vertices: vec![
-                                            Point(point.0 + 0.01, point.1 + 0.03),
-                                            Point(point.0 - 0.01, point.1 + 0.03),
-                                            Point(point.0 + 0.01, point.1 - 0.03),
-                                            Point(point.0 - 0.01, point.1 - 0.03),
-                                        ],
-                                    },
-                                });
-                                received.polygons.push(WithColor {
-                                    color: [0.0, 0.0, 0.0],
-                                    shape: Polygon {
-                                        centroid: point,
-                                        vertices: vec![
-                                            Point(point.0 + 0.01, point.1 + 0.03),
-                                            Point(point.0 + 0.01, point.1 - 0.03),
-                                            Point(point.0 - 0.01, point.1 + 0.03),
-                                            Point(point.0 - 0.01, point.1 - 0.03),
-                                        ],
-                                    },
-                                });
-                                received.polygons.push(WithColor {
-                                    color: [0.0, 0.0, 0.0],
-                                    shape: Polygon {
-                                        centroid: point,
-                                        vertices: vec![
-                                            Point(point.0 + 0.03, point.1 + 0.01),
-                                            Point(point.0 + 0.03, point.1 - 0.01),
-                                            Point(point.0 - 0.03, point.1 + 0.01),
-                                            Point(point.0 - 0.03, point.1 - 0.01),
-                                        ],
-                                    },
-                                });
-                                received.polygons.push(WithColor {
-                                    color: [0.0, 0.0, 0.0],
-                                    shape: Polygon {
-                                        centroid: point,
-                                        vertices: vec![
-                                            Point(point.0 + 0.03, point.1 + 0.01),
-                                            Point(point.0 + 0.03, point.1 - 0.01),
-                                            Point(point.0 - 0.03, point.1 + 0.01),
-                                            Point(point.0 - 0.03, point.1 - 0.01),
-                                        ],
-                                    },
-                                });
-                            });
-
-                            received
-                                .unbound_rigid_bindings
-                                .into_iter()
-                                .for_each(|point| {
-                                    received.polygons.push(WithColor {
-                                        color: [1.0, 0.0, 1.0],
-                                        shape: Polygon {
-                                            centroid: point,
-                                            vertices: vec![
-                                                Point(point.0 + 0.01, point.1 + 0.03),
-                                                Point(point.0 - 0.01, point.1 + 0.03),
-                                                Point(point.0 + 0.01, point.1 - 0.03),
-                                                Point(point.0 - 0.01, point.1 - 0.03),
-                                            ],
-                                        },
-                                    });
-                                    received.polygons.push(WithColor {
-                                        color: [1.0, 0.0, 1.0],
-                                        shape: Polygon {
-                                            centroid: point,
-                                            vertices: vec![
-                                                Point(point.0 + 0.01, point.1 + 0.03),
-                                                Point(point.0 + 0.01, point.1 - 0.03),
-                                                Point(point.0 - 0.01, point.1 + 0.03),
-                                                Point(point.0 - 0.01, point.1 - 0.03),
-                                            ],
-                                        },
-                                    });
-                                    received.polygons.push(WithColor {
-                                        color: [1.0, 0.0, 1.0],
-                                        shape: Polygon {
-                                            centroid: point,
-                                            vertices: vec![
-                                                Point(point.0 + 0.03, point.1 + 0.01),
-                                                Point(point.0 + 0.03, point.1 - 0.01),
-                                                Point(point.0 - 0.03, point.1 + 0.01),
-                                                Point(point.0 - 0.03, point.1 - 0.01),
-                                            ],
-                                        },
-                                    });
-                                    received.polygons.push(WithColor {
-                                        color: [1.0, 0.0, 1.0],
-                                        shape: Polygon {
-                                            centroid: point,
-                                            vertices: vec![
-                                                Point(point.0 + 0.03, point.1 + 0.01),
-                                                Point(point.0 + 0.03, point.1 - 0.01),
-                                                Point(point.0 - 0.03, point.1 + 0.01),
-                                                Point(point.0 - 0.03, point.1 - 0.01),
-                                            ],
-                                        },
-                                    });
-                                });
-                            received.polygons
-                        },
-                        {
-                            received.circles.push(WithColor {
-                                color: [0.0, 0.0, 0.0],
-                                shape: game_state.0.static_circle,
-                            });
-                            received.hinges.into_iter().for_each(|point| {
-                                received.circles.push(WithColor {
-                                    color: [0.0, 0.0, 0.0],
-                                    shape: Circle {
-                                        center: point,
-                                        radius: 0.02,
-                                    },
-                                });
-                            });
-                            received.unbound_hinges.into_iter().for_each(|point| {
-                                received.circles.push(WithColor {
-                                    color: [1.0, 0.0, 1.0],
-                                    shape: Circle {
-                                        center: point,
-                                        radius: 0.02,
-                                    },
-                                });
-                            });
-                            received.circles
-                        },
-                    ));
-
-                    flag_vertices = received.flags;
+                Ok(received) => {
+                    (polygons_vertices, circles_vertices) =
+                        format_data((received.polygons, received.circles));
                 }
                 Err(channel::TryRecvError::Disconnected) => *control_flow = ControlFlow::Exit,
                 _ => {}
             }
 
-            let flags_vertex_buffer = create_vertex_buffer(&memory_allocator, {
-                if !flag_vertices.is_empty() {
-                    create_positioned_vertexes(
-                        flag_vertices
-                            .iter()
-                            .flat_map(|polygon| {
-                                [
-                                    [polygon.vertices[3].0 as f32, -polygon.vertices[3].1 as f32],
-                                    [polygon.vertices[0].0 as f32, -polygon.vertices[0].1 as f32],
-                                    [polygon.vertices[2].0 as f32, -polygon.vertices[2].1 as f32],
-                                    [polygon.vertices[1].0 as f32, -polygon.vertices[1].1 as f32],
-                                ]
-                            })
-                            .collect(),
-                    )
-                } else {
-                    vec![Vertex::default(); 4]
-                }
-            });
-
-            let tool_vertex_buffer = create_vertex_buffer(
-                &memory_allocator,
-                create_positioned_vertexes(vec![
-                    [
-                        game_state.0.mouse_position[0],
-                        game_state.0.mouse_position[1] - 0.2,
-                    ],
-                    game_state.0.mouse_position,
-                    [
-                        game_state.0.mouse_position[0] + 0.2,
-                        game_state.0.mouse_position[1] - 0.2,
-                    ],
-                    [
-                        game_state.0.mouse_position[0] + 0.2,
-                        game_state.0.mouse_position[1],
-                    ],
-                ])
-                .into_iter()
-                .map(|mut vert| {
-                    vert.texture_id = game_state.0.tool as u32;
-                    vert
-                })
-                .collect::<Vec<_>>()
-                .iter()
-                .cloned(),
-            );
 
             let vertex_buffer_polygons =
                 create_vertex_buffer(&memory_allocator, polygons_vertices.clone());
 
-            let vertex_lines_buffer = create_vertex_buffer(
-                &memory_allocator,
-                game_state.0
-                    .line_points
-                    .windows(2)
-                    .flat_map(|points| {
-                        create_positioned_vertexes(vec![
-                            [points[1][0], points[1][1]],
-                            [points[1][0] - 0.01, points[1][1] - 0.01],
-                            [points[0][0] - 0.01, points[0][1] - 0.01],
-                            points[0],
-                        ])
-                    })
-                    .collect::<Vec<_>>(),
-            );
 
             let vertex_buffer_circles = if !circles_vertices.is_empty() {
                 create_vertex_buffer(&memory_allocator, circles_vertices.clone())
@@ -530,13 +283,8 @@ pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Se
                 &pipelines,
                 VertexBuffers {
                     background: texture_buffer.clone(),
-                    tool: tool_vertex_buffer,
                     polygons: vertex_buffer_polygons,
                     circles: vertex_buffer_circles,
-                    line: vertex_lines_buffer,
-                    // hinges: hinges_vertex_buffer,
-                    // unbound_hinges: unbound_hinges_vertex_buffer,
-                    flags: flags_vertex_buffer,
                 },
             );
             let command_buffer = builder.build().unwrap();
@@ -570,8 +318,6 @@ pub fn run(channel: channel::Receiver<DisplayMessage>, mut messages: channel::Se
         _ => (),
     });
 }
-
-
 
 fn create_vertex_buffer(
     memory_allocator: &(impl MemoryAllocator + ?Sized),

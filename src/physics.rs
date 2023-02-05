@@ -178,6 +178,7 @@ impl Engine {
             initial_ball_position,
             circles,
             polygons,
+            lasers,
             flags_positions,
         }: Level,
     ) -> Self {
