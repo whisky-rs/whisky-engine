@@ -118,6 +118,7 @@ pub fn init() -> Init {
                 image_format,
                 image_extent: window.inner_size().into(),
                 image_usage: ImageUsage {
+                    transfer_dst: true,
                     color_attachment: true,
                     sampled: true,
                     ..ImageUsage::empty()

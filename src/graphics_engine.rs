@@ -1,11 +1,13 @@
 use crossbeam::channel;
-use ron::de;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use std::vec;
-use vulkano::image::{AttachmentImage, ImageUsage, SampleCount};
+use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
+use vulkano::format::Format;
+use vulkano::image::{AttachmentImage, ImageDimensions, ImageUsage, ImmutableImage, SampleCount};
 use vulkano::memory::allocator::MemoryAllocator;
-use vulkano::pipeline::graphics::input_assembly::PrimitiveTopologyClass;
-use vulkano::pipeline::GraphicsPipeline;
+use vulkano::pipeline::{GraphicsPipeline, Pipeline};
+use vulkano::sampler::{Filter, Sampler, SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode};
 use vulkano::{
     buffer::{BufferUsage, CpuAccessibleBuffer},
     command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, PrimaryCommandBufferAbstract},
@@ -31,12 +33,17 @@ use vertex::Vertex;
 
 use crate::game_logic::GameState;
 use crate::geometry::{windows, Circle, Point};
+use crate::graphics_engine::monospace::Monospace;
 use crate::graphics_engine::render_pass::SimpleShapes;
 use crate::physics::{DisplayMessage, WithColor};
 use crate::InputMessage;
 
+use self::draw_text::DrawText;
+
 use super::geometry::Polygon;
 
+mod draw_text;
+mod monospace;
 mod render_pass;
 mod setup;
 mod texture;
@@ -51,6 +58,7 @@ pub struct VertexBuffers {
 pub struct Textures {
     background: texture::Texture,
     test_set: texture::Texture,
+    ball: texture::Texture,
 }
 
 pub struct Pipelines {
@@ -93,6 +101,18 @@ pub fn run(
         texture_array_pipeline,
         texture_pipeline,
     };
+    let window = surface.object().unwrap().downcast_ref::<Window>().unwrap();
+
+    let dimensions = window.inner_size();
+    let mut draw_text = DrawText::new(
+        device.clone(),
+        queue.clone(),
+        swapchain.clone(),
+        &images,
+        &memory_allocator,
+        [dimensions.width as u32, dimensions.height as u32],
+        max_sample_count,
+    );
 
     let mut first_frame = AutoCommandBufferBuilder::primary(
         &command_buffer_allocator,
@@ -101,25 +121,9 @@ pub fn run(
     )
     .unwrap();
 
-    let texture_buffer = create_vertex_buffer(
-        &memory_allocator,
-        create_positioned_vertexes(vec![[-1.0, -1.0], [-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]])
-            .iter()
-            .cloned(),
-    );
     let descriptor_set_allocator = StandardDescriptorSetAllocator::new(device.clone());
 
     println!("Loading Textures Files...");
-
-    let background_set = texture::Texture::new(
-        device.clone(),
-        &["assets/images/magic_pen_bg.png"],
-        &memory_allocator,
-        &mut first_frame,
-        MipmapsCount::One,
-        pipelines.texture_pipeline.clone(),
-        &descriptor_set_allocator,
-    );
 
     let test_set = texture::Texture::new(
         device.clone(),
@@ -130,9 +134,56 @@ pub fn run(
         pipelines.texture_pipeline.clone(),
         &descriptor_set_allocator,
     );
+
+    let ball = texture::Texture::new(
+        device.clone(),
+        &["assets/images/ball.png"],
+        &memory_allocator,
+        &mut first_frame,
+        MipmapsCount::One,
+        pipelines.texture_pipeline.clone(),
+        &descriptor_set_allocator,
+    );
+
+    let background_set = texture::Texture::new(
+        device.clone(),
+        &[
+            "assets/images/background/0001.png",
+            "assets/images/background/0002.png",
+            "assets/images/background/0003.png",
+            "assets/images/background/0004.png",
+            "assets/images/background/0005.png",
+            "assets/images/background/0006.png",
+            "assets/images/background/0007.png",
+            "assets/images/background/0008.png",
+            "assets/images/background/0009.png",
+            "assets/images/background/0010.png",
+            "assets/images/background/0011.png",
+            "assets/images/background/0012.png",
+            "assets/images/background/0013.png",
+            "assets/images/background/0014.png",
+            "assets/images/background/0015.png",
+            "assets/images/background/0016.png",
+            "assets/images/background/0017.png",
+            "assets/images/background/0018.png",
+            "assets/images/background/0019.png",
+            "assets/images/background/0020.png",
+            "assets/images/background/0021.png",
+            "assets/images/background/0022.png",
+            "assets/images/background/0023.png",
+            "assets/images/background/0024.png",
+        ],
+        &memory_allocator,
+        &mut first_frame,
+        MipmapsCount::One,
+        pipelines.texture_array_pipeline.clone(),
+        &descriptor_set_allocator,
+    );
+
     let game_textures = Textures {
         background: background_set,
-        test_set: test_set,
+        test_set,
+        ball,
     };
 
     let mut viewport = Viewport {
@@ -164,8 +215,9 @@ pub fn run(
 
     let window = surface.object().unwrap().downcast_ref::<Window>().unwrap();
     window.set_cursor_visible(false);
+    let mut timer = Instant::now();
 
-    let dimensions = window.inner_size();
+    let mut animation_or_sth = 0;
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
@@ -245,6 +297,17 @@ pub fn run(
                     &memory_allocator,
                     max_sample_count,
                 );
+
+                // draw_text = DrawText::new(
+                //     device.clone(),
+                //     queue.clone(),
+                //     swapchain.clone(),
+                //     &new_images,
+                //     &memory_allocator,
+                //     [dimensions.width as u32, dimensions.height as u32],
+                //     max_sample_count,
+                // );
+
                 recreate_swapchain = false;
             }
 
@@ -286,6 +349,44 @@ pub fn run(
                 CommandBufferUsage::OneTimeSubmit,
             )
             .unwrap();
+
+            if timer.elapsed() > Duration::from_millis(60) {
+                animation_or_sth = animation_or_sth + 1;
+                if animation_or_sth == 25 {
+                    animation_or_sth = 0;
+                }
+                timer = Instant::now();
+            }
+
+            let texture_buffer = create_vertex_buffer(
+                &memory_allocator,
+                [
+                    Vertex {
+                        position: [-1.0, -1.0],
+                        tex_position: [0.0, 0.0],
+                        texture_id: animation_or_sth,
+                        ..Default::default()
+                    },
+                    Vertex {
+                        position: [-1.0, 1.0],
+                        tex_position: [0.0, 1.0],
+                        texture_id: animation_or_sth,
+                        ..Default::default()
+                    },
+                    Vertex {
+                        position: [1.0, -1.0],
+                        tex_position: [1.0, 0.0],
+                        texture_id: animation_or_sth,
+                        ..Default::default()
+                    },
+                    Vertex {
+                        position: [1.0, 1.0],
+                        tex_position: [1.0, 1.0],
+                        texture_id: animation_or_sth,
+                        ..Default::default()
+                    },
+                ],
+            );
 
             SimpleShapes::render(
                 &mut builder,
@@ -459,71 +560,57 @@ fn format_data(
         .flat_map(|circle| {
             let color = circle.color;
             let center = [circle.shape.center.0 as f32, -circle.shape.center.1 as f32];
-            let radius = circle.shape.radius as f32;
+            let radius = circle.shape.radius;
+            let center_y = -circle.shape.center.1;
+            let center_x = circle.shape.center.0;
             let positions = [
-                [
-                    circle.shape.center.0 as f32,
-                    (-(circle.shape.center.1 - circle.shape.radius * 2.0_f64.sqrt())) as f32,
-                ],
-                [
-                    (circle.shape.center.0 - circle.shape.radius * 2.0_f64.sqrt()) as f32,
-                    -circle.shape.center.1 as f32,
-                ],
-                [
-                    circle.shape.center.0 as f32,
-                    (-(circle.shape.center.1 + circle.shape.radius * 2.0_f64.sqrt())) as f32,
-                ],
-                [
-                    circle.shape.center.0 as f32,
-                    (-(circle.shape.center.1 + circle.shape.radius * 2.0_f64.sqrt())) as f32,
-                ],
-                [
-                    (circle.shape.center.0 + circle.shape.radius * 2.0_f64.sqrt()) as f32,
-                    -circle.shape.center.1 as f32,
-                ],
-                [
-                    circle.shape.center.0 as f32,
-                    (-(circle.shape.center.1 - circle.shape.radius * 2.0_f64.sqrt())) as f32,
-                ],
+                [(center_x - radius) as f32, (center_y + radius) as f32],
+                [(center_x - radius) as f32, (center_y - radius) as f32],
+                [(center_x + radius) as f32, (center_y + radius) as f32],
+                [(center_x + radius) as f32, (center_y - radius) as f32],
             ];
-            create_circle_vertices(positions, radius, center, color)
+            create_circle_vertices(positions, radius as f32, center, color)
         })
         .collect::<Vec<_>>();
+    dbg!(circles_vertexes.clone());
 
     (polygons_vertexes, circles_vertexes)
 }
 
 fn create_circle_vertices(
-    positions: [[f32; 2]; 6],
+    positions: [[f32; 2]; 4],
     radius: f32,
     center: [f32; 2],
     color: [f32; 3],
 ) -> Vec<Vertex> {
+    let tex_coords = [[0.2, 0.8], [0.2, 0.2], [0.8, 0.8], [0.8, 0.2]];
     positions
         .into_iter()
-        .map(|position| Vertex {
+        .enumerate()
+        .map(|(i, position)| Vertex {
             position,
             radius,
             center,
-            color,
+            color: [1.0, 0.0, 1.0],
+            tex_position: tex_coords[i],
             ..Default::default()
         })
         .collect()
 }
 
-fn calculate_vertex_distance(pos0: [f32; 2], pos1: [f32; 2]) -> f32 {
-    ((pos0[0] - pos1[0]).powi(2) + (pos0[1] - pos1[1]).powi(2)).sqrt()
-}
+// fn calculate_vertex_distance(pos0: [f32; 2], pos1: [f32; 2]) -> f32 {
+//     ((pos0[0] - pos1[0]).powi(2) + (pos0[1] - pos1[1]).powi(2)).sqrt()
+// }
 
-fn create_positioned_vertexes(positions: Vec<[f32; 2]>) -> Vec<Vertex> {
-    positions
-        .into_iter()
-        .map(|position| Vertex {
-            position,
-            ..Default::default()
-        })
-        .collect()
-}
+// fn create_positioned_vertexes(positions: Vec<[f32; 2]>) -> Vec<Vertex> {
+//     positions
+//         .into_iter()
+//         .map(|position| Vertex {
+//             position,
+//             ..Default::default()
+//         })
+//         .collect()
+// }
 
 /// This method is called once during initialization, then again whenever the window is resized
 fn window_size_dependent_setup(

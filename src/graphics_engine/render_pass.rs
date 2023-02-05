@@ -20,10 +20,10 @@ use vulkano::{
     },
     render_pass::{Framebuffer, RenderPass, Subpass},
     shader::ShaderModule,
-    swapchain::Swapchain,
+    swapchain::Swapchain, memory::allocator::{GenericMemoryAllocator, FreeListAllocator, MemoryAllocator}, descriptor_set::allocator::StandardDescriptorSetAllocator,
 };
 
-use super::{vertex::Vertex, Pipelines, Textures, VertexBuffers};
+use super::{vertex::Vertex, Pipelines, Textures, VertexBuffers, draw_text::{DrawText, DrawTextTrait}};
 
 pub struct SimpleShapes {
     pub command_buffer_allocator: StandardCommandBufferAllocator,
@@ -144,6 +144,7 @@ impl SimpleShapes {
             text_array_fs,
         );
 
+
         SimpleShapes {
             command_buffer_allocator,
             render_pass,
@@ -163,6 +164,10 @@ impl SimpleShapes {
         pipelines: &Pipelines,
         buffers: VertexBuffers,
     ) {
+
+
+
+
         builder
             .begin_render_pass(
                 RenderPassBeginInfo {
@@ -173,10 +178,10 @@ impl SimpleShapes {
             )
             .unwrap()
             .set_viewport(0, [viewport.clone()])
-            .bind_pipeline_graphics(pipelines.texture_pipeline.clone())
+            .bind_pipeline_graphics(pipelines.texture_array_pipeline.clone())
             .bind_descriptor_sets(
                 PipelineBindPoint::Graphics,
-                pipelines.texture_pipeline.layout().clone(),
+                pipelines.texture_array_pipeline.layout().clone(),
                 0,
                 textures.background.0.clone(),
             )
@@ -193,14 +198,19 @@ impl SimpleShapes {
             .bind_vertex_buffers(0, buffers.polygons.clone())
             .draw(buffers.polygons.len() as u32, 1, 0, 0)
             .unwrap()
-            .bind_pipeline_graphics(pipelines.circle_pipeline.clone())
+            .bind_pipeline_graphics(pipelines.texture_pipeline.clone())
             .bind_vertex_buffers(0, buffers.circles.clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Graphics,
+                pipelines.texture_pipeline.layout().clone(),
+                0,
+                textures.ball.0.clone(),
+            )
             .draw(buffers.circles.len() as u32, 1, 0, 0)
             .unwrap()
-
-
             .end_render_pass()
             .unwrap();
+            // .draw_text(&mut draw_text, image_num, dimensions, descriptor_set_allocator, memory_allocator);
     }
 }
 
@@ -267,3 +277,4 @@ mod tex_array_fs {
         path: "shaders/fragment/texture_array_frag.glsl"
     }
 }
+
