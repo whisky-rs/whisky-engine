@@ -18,7 +18,6 @@ pub struct GameState {
     pub mouse_position: [f32; 2],
     pub timer: Instant,
     pub player: Circle,
-    pub angle: f32,
     pub reset_position: bool,
 }
 
@@ -31,10 +30,10 @@ impl GameState {
     ) {
         self.mouse_position = Self::normalize_mouse_position(dimensions, position);
 
-        self.calculate_new_angle();
         input_physics_actions
-            .send(InputMessage::Angle(self.angle))
+            .send(InputMessage::Angle(self.mouse_position[0] / 2.0))
             .unwrap();
+
         if self.timer.elapsed() >= Duration::from_millis(100) {
             // have to normalize coordinates
 
@@ -72,11 +71,6 @@ impl GameState {
             }
             _ => {}
         };
-    }
-
-    fn calculate_new_angle(&mut self) {
-        let two_pi = 2. * std::f32::consts::PI;
-        self.angle = (self.angle + self.mouse_position[0] * std::f32::consts::PI / 6.0) % two_pi;
     }
 
     fn normalize_mouse_position(

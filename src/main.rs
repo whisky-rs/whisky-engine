@@ -56,13 +56,16 @@ fn main() -> Result<(), ArgError> {
         },
         timer: Instant::now(),
         reset_position: false,
-        angle: 0.,
     };
 
     let physics = thread::spawn(move || {
-        let mut physics = physics::Engine::new(shapes_tx.clone(), level.clone());
+        let mut physics = physics::Engine::new(shapes_tx, level.clone());
         let mut connected = false;
         loop {
+            if let Some(ref next_level) = physics.next_level {
+                let level = Level::load_from_file(next_level).unwrap();
+                physics = physics.reload_level(level);
+            }
             match phone_rx.try_recv() {
                 Ok(phone_connector::Message::Connected) => connected = true,
                 Ok(phone_connector::Message::Disconnected) => connected = false,
@@ -86,7 +89,7 @@ fn main() -> Result<(), ArgError> {
                 }
                 Ok(InputMessage::Angle(angle)) => {
                     if !connected {
-                        physics.angle = angle;
+                        physics.angle = (physics.angle + angle) % (std::f32::consts::PI * 2.0);
                     }
                 }
                 Ok(InputMessage::Jump) => physics.jump(),

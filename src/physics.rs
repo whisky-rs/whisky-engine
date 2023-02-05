@@ -1,8 +1,6 @@
 use std::{
     cell::RefCell,
     f64::consts,
-    os::raw::c_void,
-    process,
     rc::{Rc, Weak},
     time::Instant,
     vec,
@@ -13,7 +11,7 @@ use rand::Rng;
 
 use self::{
     binding::{Binding, Unbound},
-    shape::{Circle, Collidable, CollisionType, Polygon, Bounded},
+    shape::{Bounded, Circle, Collidable, CollisionType, Polygon},
 };
 use crate::{
     geometry::{self, Laser, Point, Vector},
@@ -200,6 +198,7 @@ pub struct Engine {
     pub angle: f32,
     lasers: Vec<Laser>,
     jumps_count: usize,
+    pub next_level: Option<String>,
 }
 
 impl Engine {
@@ -238,6 +237,7 @@ impl Engine {
             angle: 0.0,
             lasers,
             jumps_count: 2,
+            next_level: None,
         };
 
         let main_ball_weak = engine.add_entity(
@@ -336,7 +336,7 @@ impl Engine {
     pub fn run_iteration(&mut self) {
         let time_step = self.last_iteration.elapsed();
         let mut is_reset_level = false;
-        let mut is_reset_jumps = false;
+        let is_reset_jumps = false;
         self.last_iteration = Instant::now();
 
         // move all shapes, removing ones out of bounds
@@ -362,7 +362,7 @@ impl Engine {
             let mut end_point = start_point + delta;
             loop {
                 let main_ball_rc = self.main_ball.upgrade().unwrap();
-                if (main_ball_rc.borrow().includes(end_point)) {
+                if main_ball_rc.borrow().includes(end_point) {
                     is_reset_level = true;
                     break;
                 }
@@ -395,7 +395,6 @@ impl Engine {
             if data.centroid.0.abs() > 5.0 || data.centroid.1 < -5.0 {
                 is_reset_level = true;
             }
-
         }
 
         // iterate over all pairs of shapes
@@ -441,11 +440,14 @@ impl Engine {
                         }
                     }
 
-                    if i == 0 && !other.is_deadly {
-                        if let CollisionType::Weak | CollisionType::Strong = collision {
-                            is_reset_jumps = true;
-                        }
-                    }
+                    // if i == 0 && !other.is_deadly {
+                    //     if let CollisionType::Weak | CollisionType::Strong = collision {
+                    //         is_reset_jumps = true;
+                    //         self.next_level = Some("level3.ron".to_string());
+                    //         // println!("=========== OOF ==========");
+                    //         // process::exit(0);
+                    //     }
+                    // }
                     // }
                 });
 
@@ -542,8 +544,11 @@ impl Engine {
 
         for laser in &mut self.lasers {
             laser.direction = laser.direction.rotate(laser.change);
-
         }
+    }
+
+    pub fn reload_level(self, level: Level) -> Self {
+        Self::new(self.channel, level)
     }
 
     pub fn try_bind(&mut self, new_shape: &Rc<RefCell<dyn Collidable>>) {
