@@ -572,7 +572,6 @@ fn format_data(
             create_circle_vertices(positions, radius as f32, center, color)
         })
         .collect::<Vec<_>>();
-    dbg!(circles_vertexes.clone());
 
     (polygons_vertexes, circles_vertexes)
 }
